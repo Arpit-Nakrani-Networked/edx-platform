@@ -11,6 +11,7 @@ import logging
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import UNUSABLE_PASSWORD_PREFIX
+from django.db import DatabaseError
 from common.djangoapps.track import segment
 
 LOGGER = logging.getLogger(__name__)
@@ -63,11 +64,11 @@ class Command(BaseCommand):
                         segment.identify(user['id'], {'is_disabled': 'true'})
                         LOGGER.info(f"Successfully updated user {user['id']} with is_disabled=true")
                     processed += 1
-                except Exception as e:  # pylint: disable=broad-exception-caught
+                except (ConnectionError, ValueError) as e:
                     LOGGER.error(f"Failed to update user {user['id']}: {str(e)}")
 
             LOGGER.info(f"Back fill completed: processed {processed}/{total_users} users")
 
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except DatabaseError as e:
             LOGGER.error(f"Back fill failed: {str(e)}")
-            raise
+            pass
