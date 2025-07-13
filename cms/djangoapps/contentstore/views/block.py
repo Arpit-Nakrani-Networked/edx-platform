@@ -64,6 +64,7 @@ __all__ = [
     "xblock_view_handler",
     "xblock_outline_handler",
     "xblock_container_handler",
+    "xblock_unit_container_handler",
 ]
 
 log = logging.getLogger(__name__)
@@ -362,7 +363,58 @@ def xblock_container_handler(request, usage_key_string):
         return JsonResponse(response)
     else:
         raise Http404
+    
+@require_http_methods("GET")
+@login_required
+@expect_json
+def xblock_unit_container_handler(request, usage_key_string):
+    """
+    Custom handler to fetch all components of a vertical XBlock(unit), including their 'data',
+    and include the vertical block itself in the response.
+    """
+    usage_key = usage_key_with_run(usage_key_string)
 
+    if not has_studio_read_access(request.user, usage_key.course_key):
+        raise PermissionDenied()
+
+    response_format = request.GET.get("format", "html")
+    if response_format == "json" or "application/json" in request.META.get(
+        "HTTP_ACCEPT", "application/json"
+    ):
+        with modulestore().bulk_operations(usage_key.course_key):
+            # Load the vertical block
+            vertical_xblock = get_xblock(usage_key, request.user)
+
+            # Build info for vertical block itself
+            vertical_block_info = get_block_info(
+                vertical_xblock,
+                include_ancestor_info=False,
+                include_publishing_info=True,
+            )
+
+            # Ensure 'data' is present
+            if "data" not in vertical_block_info:
+                vertical_block_info["data"] = getattr(vertical_xblock, "data", None)
+
+            # Get all child components
+            components_info = []
+            for child_locator in vertical_xblock.children:
+                child_xblock = get_xblock(child_locator, request.user)
+                component_data = get_block_info(
+                    child_xblock,
+                    include_ancestor_info=False,
+                    include_publishing_info=True,
+                )
+                if "data" not in component_data:
+                    component_data["data"] = getattr(child_xblock, "data", None)
+                components_info.append(component_data)
+
+        return JsonResponse({
+            "vertical_block": vertical_block_info,
+            "components": components_info
+        })
+    else:
+        raise Http404
 
 @login_required
 @require_http_methods(("GET", "DELETE"))

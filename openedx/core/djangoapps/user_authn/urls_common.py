@@ -15,7 +15,7 @@ from django.conf import settings
 from django.contrib.auth.views import PasswordResetCompleteView
 from django.urls import path, re_path
 
-from .views import auto_auth, login, logout, password_reset, register
+from .views import auto_auth, login, logout, password_reset, register,user_role
 from .views.password_reset import PasswordResetConfirmWrapper
 
 urlpatterns = [
@@ -56,6 +56,9 @@ urlpatterns = [
     re_path(r'^user_api/(?P<api_version>v(1|2))/account/login_session/$', login.LoginSessionView.as_view(),
             name="user_api_login_session_legacy"),
 
+    path('common-redirection/<str:userid>', login.common_redirect_to_login, name="common_redirect_to_login"),
+    path('api/user/v1/account/role/<str:email>', user_role.user_role_change_handle, name="user_api_role_change"),
+    
     # Login Refresh of JWT Cookies
     path('login_refresh', login.login_refresh, name="login_refresh"),
 

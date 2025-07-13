@@ -3,18 +3,19 @@ Views for login / logout and associated functionality
 
 Much of this file was broken out from views.py, previous history can be found there.
 """
-
+import urllib.parse
 import hashlib
 import json
 import logging
 import re
 import urllib
-
+from urllib.parse import unquote
+from django.http import HttpResponseRedirect
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth import login as django_login
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden,HttpResponseRedirect
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -58,6 +59,7 @@ from openedx.core.djangoapps.util.user_messages import PageLevelMessages
 from openedx.core.djangolib.markup import HTML, Text
 from openedx.core.lib.api.view_utils import require_post_params  # lint-amnesty, pylint: disable=unused-import
 from openedx.features.enterprise_support.api import activate_learner_enterprise, get_enterprise_learner_data_from_api
+import requests
 
 log = logging.getLogger("edx.student")
 AUDIT_LOG = logging.getLogger("audit")
@@ -545,7 +547,7 @@ def login_user(request, api_version='v1'):  # pylint: disable=too-many-statement
     first_party_auth_requested = any(bool(request.POST.get(p)) for p in ['email', 'email_or_username', 'password'])
     is_user_third_party_authenticated = False
 
-    set_custom_attribute('login_user_course_id', request.POST.get('course_id'))
+    # set_custom_attribute('login_user_course_id', request.POST.get('course_id'))
 
     if is_require_third_party_auth_enabled() and not third_party_auth_requested:
         return HttpResponseForbidden(
@@ -678,6 +680,68 @@ def login_user(request, api_version='v1'):  # pylint: disable=too-many-statement
     return response
 
 
+@require_http_methods(['GET'])
+def common_redirect_to_login(request,userid):
+    try:
+        response = requests.get(f'https://backend.lab.networked.co/api/v1/global/open-edx/lms-session-id/{userid}')
+        response.raise_for_status()
+        data = response.json()
+        
+        # Determine the next URL based on the 'next' parameter
+        next_param = request.GET.get('next', '')
+        if next_param.startswith('create-course'):
+            # Extract course ID from the parameter, e.g., 'enroll-course:courseid'
+            parts = next_param.split(':', 1)
+            prefix = parts[0]
+            course_body = urllib.parse.unquote(parts[1]) if len(parts) > 1 else ''
+
+            # Step 2: Replace only the first two spaces with '+'
+            course_body_parts = course_body.split(' ', 2)  # Split into at most 3 parts
+            if len(course_body_parts) == 3:
+                course_id_cleaned = f"{course_body_parts[0]}+{course_body_parts[1]}+{course_body_parts[2]}"
+            else:
+                course_id_cleaned = course_body.replace(' ', '+', 2)  # fallback
+
+            # Step 3: Reconstruct full course ID
+            final_course_id = f"{course_id_cleaned}"
+            redirect_url = f'http://apps.local.openedx.io:2001/authoring/course/{final_course_id}'
+        elif next_param.startswith('enroll-course'):
+            # Extract course ID from the parameter, e.g., 'enroll-course:courseid'
+            parts = next_param.split(':', 1)
+            course_id = parts[1] if len(parts) > 1 else ''
+            redirect_url = f'http://apps.local.openedx.io:2000/learning/course/{course_id}/home'
+        else:
+            redirect_url = '/'
+
+        # Generate JS to set each cookie
+        cookie_js_lines = "\n".join([
+            f'document.cookie = "{key}=" + {json.dumps(value)} + "; path=/; max-age=1209600; SameSite=Lax";'
+            for key, value in data.items()
+        ])
+
+        # Send back script to set cookies and redirect
+        html = f"""
+        <html>
+        <head>
+            <script>
+                // Set all cookies
+                {cookie_js_lines}
+
+                // Redirect to home
+                window.location.href = "{redirect_url}";
+            </script>
+        </head>
+        <body>
+            Redirecting...
+        </body>
+        </html>
+        """
+        return HttpResponse(html, content_type="text/html")
+    except requests.RequestException as e:
+        return HttpResponse(f"Error during API request: {e}", status=500)
+    except ValueError:
+        return HttpResponse("Invalid JSON response", status=500)
+
 # CSRF protection is not needed here because the only side effect
 # of this endpoint is to refresh the cookie-based JWT, and attempting
 # to get a CSRF token before we need to refresh adds too much
@@ -693,7 +757,6 @@ def login_refresh(request):  # lint-amnesty, pylint: disable=missing-function-do
     except AuthFailedError as error:
         log.exception(error.get_response())
         return JsonResponse(error.get_response(), status=400)
-
 
 def redirect_to_lms_login(request):
     """
