@@ -77,6 +77,34 @@ ${static.get_page_title_breadcrumbs(course_name())}
 ${HTML(fragment.foot_html())}
 
 </%block>
+  <style>
+    /* body{
+      background: lightblue !important;
+    }
+
+    h1{
+      color: red !important;
+    } */
+
+    #main{
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    .problem>.wrapper-problem-response:first-child{
+      margin-bottom: 12px !important;
+    }
+    .problem .wrapper-problem-response .choicegroup fieldset .field label{
+      border: none !important;
+    }
+    .xmodule_display.xmodule_ProblemBlock div.problem .choicegroup input[type="radio"], .xmodule_display.xmodule_ProblemBlock div.problem .choicegroup input[type="checkbox"]{
+      left: -6px !important;
+      }
+      .xmodule_display.xmodule_ProblemBlock div.problem .choicegroup label{
+      padding-left: 30px !important;
+      margin: 0 !important;
+      }
+  </style>
 
 <%block name="body_extra"/>
 

@@ -46,9 +46,9 @@ from openedx.core.djangolib.markup import HTML
             </label>
           </div>
         % endfor
-        <span id="answer_${id}"></span>
+        <!-- <span id="answer_${id}"></span> -->
     </fieldset>
-    <div class="indicator-container">
+    <!-- <div class="indicator-container">
         % if show_correctness != 'never':
           <%include file="status_span.html" args="status=status, status_id=id"/>
         % else:
@@ -60,5 +60,5 @@ from openedx.core.djangolib.markup import HTML
     %endif
     % if msg:
     <span class="message" aria-describedby="${id}-legend" tabindex="-1">${HTML(msg)}</span>
-    % endif
+    % endif -->
 </div>
