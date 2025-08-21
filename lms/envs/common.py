@@ -384,7 +384,7 @@ FEATURES = {
     # .. toggle_use_cases: open_edx
     # .. toggle_creation_date: 2018-05-07
     # .. toggle_warning: The login MFE domain name should be listed in LOGIN_REDIRECT_WHITELIST.
-    'SKIP_EMAIL_VALIDATION': False,
+    'SKIP_EMAIL_VALIDATION': True,
 
     # .. toggle_name: FEATURES['ENABLE_COSMETIC_DISPLAY_PRICE']
     # .. toggle_implementation: DjangoSetting
