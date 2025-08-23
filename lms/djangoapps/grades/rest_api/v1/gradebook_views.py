@@ -39,6 +39,9 @@ from lms.djangoapps.grades.api import gradebook_bulk_management_enabled
 from lms.djangoapps.grades.api import is_writable_gradebook_enabled, prefetch_course_and_subsection_grades
 from lms.djangoapps.grades.course_data import CourseData
 from lms.djangoapps.grades.grade_utils import are_grades_frozen
+from lms.djangoapps.courseware.courses import (
+    get_course_blocks_completion_summary,
+)
 # TODO these imports break abstraction of the core Grades layer. This code needs
 # to be refactored so Gradebook views only access public Grades APIs.
 from lms.djangoapps.grades.models import (
@@ -67,6 +70,7 @@ from openedx.core.lib.api.view_utils import (
 )
 from openedx.core.lib.cache_utils import request_cached
 from openedx.core.lib.courses import get_course_by_id
+from openedx.core.djangoapps.user_api.accounts.serializers import AccountLegacyProfileSerializer
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.util.misc import get_default_short_labeler  # lint-amnesty, pylint: disable=wrong-import-order
 
@@ -487,7 +491,7 @@ class GradebookView(GradeViewMixin, PaginatedAPIView):
             })
         return breakdown
 
-    def _gradebook_entry(self, user, course, graded_subsections, course_grade):
+    def _gradebook_entry(self, user, course, graded_subsections, course_grade,request=None):
         """
         Returns a dictionary of course- and subsection-level grade data for
         a given user in a given course.
@@ -500,8 +504,13 @@ class GradebookView(GradeViewMixin, PaginatedAPIView):
         """
         user_entry = self._serialize_user_grade(user, course.id, course_grade)
         breakdown = self._section_breakdown(course, graded_subsections, course_grade)
-
+        profile = user.profile
         user_entry['section_breakdown'] = breakdown
+        user_entry['completion_summary'] = get_course_blocks_completion_summary(course.id, user)
+        user_entry["profile_image"] = AccountLegacyProfileSerializer.get_profile_image(
+                        profile, user,request
+                    )
+
         user_entry['progress_page_url'] = reverse(
             'student_progress',
             kwargs=dict(course_id=str(course.id), student_id=user.id)
@@ -654,7 +663,7 @@ class GradebookView(GradeViewMixin, PaginatedAPIView):
                 # TODO: In django 3.0+, we can directly filter on this 'exists' rather than annotating
                 q_objects.append(Q(has_excluded_role=False))
             entries = []
-            related_models = ['user']
+            related_models = ['user','user__profile']
             users = self._paginate_users(course_key, q_objects, related_models, annotations=annotations)
 
             users_counts = self._get_users_counts(course_key, q_objects, annotations=annotations)

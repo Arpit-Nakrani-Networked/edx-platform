@@ -23,17 +23,21 @@ from common.djangoapps.student.models import CourseEnrollment, CourseEnrollmentA
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.models import GeneratedCertificate
 from lms.djangoapps.courseware.models import StudentModule
+from lms.djangoapps.courseware.courses import (
+    get_course_blocks_completion_summary
+)
 from lms.djangoapps.grades.api import context as grades_context
 from lms.djangoapps.program_enrollments.api import fetch_program_enrollments_by_students
 from lms.djangoapps.verify_student.services import IDVerificationService
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
+from openedx.core.djangoapps.user_api.accounts.serializers import AccountLegacyProfileSerializer
 from openedx.core.djangolib.markup import HTML, Text
 
 log = logging.getLogger(__name__)
 
 
 STUDENT_FEATURES = ('id', 'username', 'first_name', 'last_name', 'is_staff', 'email',
-                    'date_joined', 'last_login')
+                    'date_joined', 'last_login','completion_summary')
 PROFILE_FEATURES = ('name', 'language', 'location', 'year_of_birth', 'gender',
                     'level_of_education', 'mailing_address', 'goals', 'meta',
                     'city', 'country')
@@ -84,7 +88,7 @@ def issued_certificates(course_key, features):
     return generated_certificates
 
 
-def enrolled_students_features(course_key, features):
+def enrolled_students_features(course_key, features,search_term=""):
     """
     Return list of student features as dictionaries.
 
@@ -103,10 +107,16 @@ def enrolled_students_features(course_key, features):
     include_program_enrollments = 'external_user_key' in features
     external_user_key_dict = {}
 
-    students = User.objects.filter(
-        courseenrollment__course_id=course_key,
-        courseenrollment__is_active=1,
-    ).order_by('username').select_related('profile')
+
+    filters = {
+    "courseenrollment__course_id": course_key,
+    "courseenrollment__is_active": True,
+    }
+    print('search_term',search_term)
+    if search_term:
+        filters["username__icontains"] = search_term
+
+    students = User.objects.filter(**filters).select_related("profile").order_by("username")
 
     if include_cohort_column:
         students = students.prefetch_related('course_groups')
@@ -128,7 +138,7 @@ def enrolled_students_features(course_key, features):
         except TypeError:
             return str(attr)
 
-    def extract_student(student, features):
+    def extract_student(student, features,request=None):
         """ convert student to dictionary """
         student_features = [x for x in STUDENT_FEATURES if x in features]
         profile_features = [x for x in PROFILE_FEATURES if x in features]
@@ -187,7 +197,15 @@ def enrolled_students_features(course_key, features):
 
         if include_program_enrollments:
             # extra external_user_key
-            student_dict['external_user_key'] = external_user_key_dict.get(student.id, '')
+            student_dict["external_user_key"] = external_user_key_dict.get(
+                student.id, ""
+            )
+        student_dict["completion_summary"] = get_course_blocks_completion_summary(
+            course_key, student
+        )
+        student_dict["profile_image"] = AccountLegacyProfileSerializer.get_profile_image(
+                        profile, student,request
+                    )
 
         return student_dict
 

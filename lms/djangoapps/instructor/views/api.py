@@ -1464,7 +1464,7 @@ class GetStudentsFeatures(DeveloperErrorViewMixin, APIView):
             query_features = [
                 'id', 'username', 'name', 'email', 'language', 'location',
                 'year_of_birth', 'gender', 'level_of_education', 'mailing_address',
-                'goals', 'enrollment_mode', 'last_login', 'date_joined', 'external_user_key'
+                'goals', 'enrollment_mode', 'last_login', 'date_joined', 'external_user_key','profile_image'
             ]
         keep_field_private(query_features, 'year_of_birth')  # protected information
 
@@ -1485,6 +1485,7 @@ class GetStudentsFeatures(DeveloperErrorViewMixin, APIView):
             'mailing_address': _('Mailing Address'),
             'goals': _('Goals'),
             'enrollment_mode': _('Enrollment Mode'),
+            'profile_image': _('Profile Image'),
             'last_login': _('Last Login'),
             'date_joined': _('Date Joined'),
             'external_user_key': _('External User Key'),
@@ -1504,9 +1505,10 @@ class GetStudentsFeatures(DeveloperErrorViewMixin, APIView):
         query_features_names['city'] = _('City')
         query_features.append('country')
         query_features_names['country'] = _('Country')
+        search_term = request.data.get('user_contains')
 
         if not csv:
-            student_data = instructor_analytics_basic.enrolled_students_features(course_key, query_features)
+            student_data = instructor_analytics_basic.enrolled_students_features(course_key, query_features,search_term)
             response_payload = {
                 'course_id': str(course_key),
                 'students': student_data,

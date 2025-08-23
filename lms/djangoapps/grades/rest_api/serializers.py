@@ -45,6 +45,17 @@ class SectionBreakdownSerializer(serializers.Serializer):
     score_possible = serializers.FloatField()
     subsection_name = serializers.CharField()
 
+class CompletionSummarySerializer(serializers.Serializer):
+    complete_count = serializers.IntegerField()
+    incomplete_count = serializers.IntegerField()
+    locked_count = serializers.IntegerField()
+
+class ProfileImageSerializer(serializers.Serializer):
+    has_image = serializers.BooleanField()
+    image_url_full = serializers.CharField()
+    image_url_large = serializers.CharField()
+    image_url_medium = serializers.CharField()
+    image_url_small = serializers.CharField()
 
 class StudentGradebookEntrySerializer(serializers.Serializer):
     """
@@ -56,6 +67,8 @@ class StudentGradebookEntrySerializer(serializers.Serializer):
     email = serializers.EmailField()
     external_user_key = serializers.CharField(required=False)
     percent = serializers.FloatField()
+    profile_image = ProfileImageSerializer()
+    completion_summary = CompletionSummarySerializer()
     section_breakdown = SectionBreakdownSerializer(many=True)
 
 
