@@ -24,29 +24,9 @@ DEFAULT_GRADING_POLICY = {
         {
             "type": "Homework",
             "short_label": "HW",
-            "min_count": 12,
-            "drop_count": 2,
-            "weight": 0.15,
-        },
-        {
-            "type": "Lab",
-            "min_count": 12,
-            "drop_count": 2,
-            "weight": 0.15,
-        },
-        {
-            "type": "Midterm Exam",
-            "short_label": "Midterm",
             "min_count": 1,
-            "drop_count": 0,
-            "weight": 0.3,
-        },
-        {
-            "type": "Final Exam",
-            "short_label": "Final",
-            "min_count": 1,
-            "drop_count": 0,
-            "weight": 0.4,
+            "drop_count":0,
+            "weight": 1,
         }
     ],
     "GRADE_CUTOFFS": {
