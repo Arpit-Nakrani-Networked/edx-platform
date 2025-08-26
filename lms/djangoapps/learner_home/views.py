@@ -52,6 +52,9 @@ from lms.djangoapps.learner_home.serializers import (
 from lms.djangoapps.learner_home.utils import (
     get_masquerade_user,
 )
+from lms.djangoapps.courseware.courses import (
+    get_course_blocks_completion_summary
+)
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.programs.utils import ProgramProgressMeter
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
@@ -249,6 +252,27 @@ def get_cert_statuses(user, course_enrollments):
             )
 
     return cert_statuses
+
+@function_trace("get_progress_course")
+def get_progress_course(user, course_enrollments):
+    """Get user progress by course for user enrollments"""
+
+    progress_trck = {}
+
+    for enrollment in course_enrollments:
+        # APER-2171 - trying to get a cert for a deleted course can throw an exception
+        # Wrap in exception handling to avoid this issue.
+        try:
+            progress_trck[enrollment.course_id] = get_course_blocks_completion_summary(
+                enrollment.course_id, user
+            )
+
+        except Exception as ex:  # pylint: disable=broad-except
+            logger.exception(
+                f"Error getting progress course for (user, course) ({user}, {enrollment.course_id}): {ex}"
+            )
+
+    return progress_trck
 
 
 @function_trace("get_org_block_and_allow_lists")
@@ -519,6 +543,9 @@ class InitializeView(APIView):  # pylint: disable=unused-argument
         # Get cert status by course
         cert_statuses = get_cert_statuses(user, course_enrollments)
 
+        # Get user progress by course
+        course_progress = get_progress_course(user, course_enrollments)
+
         # Determine view access for course, (for showing courseware link) involves:
         course_access_checks = check_course_access(user, course_enrollments)
 
@@ -556,6 +583,7 @@ class InitializeView(APIView):  # pylint: disable=unused-argument
             "audit_access_deadlines": audit_access_deadlines,
             "ecommerce_payment_page": ecommerce_payment_page,
             "cert_statuses": cert_statuses,
+            "course_progress": course_progress,
             "course_mode_info": course_mode_info,
             "course_optouts": course_optouts,
             "course_access_checks": course_access_checks,

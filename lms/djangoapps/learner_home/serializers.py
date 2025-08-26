@@ -336,6 +336,28 @@ class CertificateSerializer(serializers.Serializer):
             return None
         else:
             return cert_info.get("cert_web_view_url")
+        
+class ProgressSerializer(serializers.Serializer):
+    """Progress Grade info"""
+
+    requires_context = True
+
+    complete_count = serializers.SerializerMethodField()
+    incomplete_count = serializers.SerializerMethodField()
+    locked_count = serializers.SerializerMethodField()
+
+    def get_progress_info(self, enrollment):
+        """Utility to grab progress info for this enrollment or empty object"""
+        return self.context.get("course_progress", {}).get(enrollment.course.id, {})
+
+    def get_complete_count(self, enrollment):
+        return self.get_progress_info(enrollment).get("complete_count",0)
+    
+    def get_incomplete_count(self, enrollment):
+        return self.get_progress_info(enrollment).get("incomplete_count",0)
+    
+    def get_locked_count(self, enrollment):
+        return self.get_progress_info(enrollment).get("locked_count",0)
 
 
 class AvailableEntitlementSessionSerializer(serializers.Serializer):
@@ -455,6 +477,7 @@ class LearnerEnrollmentSerializer(serializers.Serializer):
     courseRun = CourseRunSerializer(source="*")
     enrollment = EnrollmentSerializer(source="*")
     certificate = CertificateSerializer(source="*")
+    progress = ProgressSerializer(source="*")
     entitlement = serializers.SerializerMethodField()
     gradeData = GradeDataSerializer(source="*")
     programs = serializers.SerializerMethodField()
