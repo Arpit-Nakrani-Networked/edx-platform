@@ -14,7 +14,7 @@ from math import exp
 import dateutil.parser
 from pytz import utc
 
-DEFAULT_START_DATE = datetime(2030, 1, 1, tzinfo=utc)
+DEFAULT_START_DATE = datetime.now(utc)
 
 """
 Default grading policy for a course run.

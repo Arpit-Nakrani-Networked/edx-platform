@@ -14,7 +14,7 @@ from xmodule.data import CertificatesDisplayBehaviors  # lint-amnesty, pylint: d
 from xmodule.fields import Date  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.exceptions import ItemNotFoundError  # lint-amnesty, pylint: disable=wrong-import-order
-
+from xmodule.course_block import COURSE_VISIBILITY_PUBLIC
 # This list represents the attribute keys for a course's 'about' info.
 # Note: The 'video' attribute is intentionally excluded as it must be
 # handled separately; its value maps to an alternate key name.
@@ -31,6 +31,7 @@ ABOUT_ATTRIBUTES = [
     'entrance_exam_id',
     'entrance_exam_minimum_score_pct',
     'about_sidebar_html',
+    'course_visibility'
 ]
 
 
@@ -76,6 +77,7 @@ class CourseDetails:
             '50'
         )  # minimum passing score for entrance exam content module/tree,
         self.self_paced = None
+        self.course_visibility = COURSE_VISIBILITY_PUBLIC
         self.learning_info = []
         self.instructor_info = []
 
@@ -209,7 +211,7 @@ class CourseDetails:
         date = Date()
 
         if jsondict['overview'] == '':
-            jsondict['overview'] = '<p>&nbsp;</p>'
+            jsondict['overview'] = ''
 
         if 'start_date' in jsondict:
             converted = date.from_json(jsondict['start_date'])
@@ -356,6 +358,7 @@ class CourseDetails:
                      'frameborder="0" allowfullscreen=""></iframe>').format(video_key)
             )
         return result
+
 
     @classmethod
     def validate_certificate_settings(cls, certificate_available_date, certificates_display_behavior):
