@@ -57,5 +57,4 @@ class CourseDetailsSerializer(serializers.Serializer):
     title = serializers.CharField(allow_blank=True)
     video_thumbnail_image_asset_path = serializers.CharField()
     video_thumbnail_image_name = serializers.CharField(allow_blank=True)
-    catalog_visibility = serializers.CharField()
 

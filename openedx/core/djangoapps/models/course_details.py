@@ -148,8 +148,9 @@ class CourseDetails:
         Returns the course about video ID.
         """
         raw_video = cls.fetch_about_attribute(course_key, 'video')
-        if raw_video:
-            return cls.parse_video_tag(raw_video)
+        # if raw_video:
+        #     return cls.parse_video_tag(raw_video)
+        return raw_video
 
     @classmethod
     def fetch_video_url(cls, course_key):
@@ -157,8 +158,9 @@ class CourseDetails:
         Returns the course about video URL.
         """
         video_id = cls.fetch_youtube_video_id(course_key)
-        if video_id:
-            return f"http://www.youtube.com/watch?v={video_id}"
+        # if video_id:
+        #     return f"http://www.youtube.com/watch?v={video_id}"
+        return video_id
 
     @classmethod
     def update_about_item(cls, course, about_key, data, user_id, store=None):
@@ -330,15 +332,16 @@ class CourseDetails:
         if not raw_video:
             return None
 
-        keystring_matcher = re.search(r'(?<=embed/)[a-zA-Z0-9_-]+', raw_video)
-        if keystring_matcher is None:
-            keystring_matcher = re.search(r'<?=\d+:[a-zA-Z0-9_-]+', raw_video)
+        # keystring_matcher = re.search(r'(?<=embed/)[a-zA-Z0-9_-]+', raw_video)
+        # if keystring_matcher is None:
+        #     keystring_matcher = re.search(r'<?=\d+:[a-zA-Z0-9_-]+', raw_video)
 
-        if keystring_matcher:
-            return keystring_matcher.group(0)
-        else:
-            logging.warn("ignoring the content because it doesn't not conform to expected pattern: " + raw_video)  # lint-amnesty, pylint: disable=deprecated-method, logging-not-lazy
-            return None
+        # if keystring_matcher:
+        #     return keystring_matcher.group(0)
+        # else:
+        #     logging.warn("ignoring the content because it doesn't not conform to expected pattern: " + raw_video)  # lint-amnesty, pylint: disable=deprecated-method, logging-not-lazy
+        #     return None
+        return raw_video
 
     @staticmethod
     def recompose_video_tag(video_key):
@@ -348,12 +351,12 @@ class CourseDetails:
         # TODO should this use a mako template? Of course, my hope is
         # that this is a short-term workaround for the db not storing
         #  the right thing
-        result = None
-        if video_key:
-            result = (
-                HTML('<iframe title="YouTube Video" width="560" height="315" src="//www.youtube.com/embed/{}?rel=0" '
-                     'frameborder="0" allowfullscreen=""></iframe>').format(video_key)
-            )
+        result = video_key
+        # if video_key:
+        #     result = (
+        #         HTML('<iframe title="YouTube Video" width="560" height="315" src="//www.youtube.com/embed/{}?rel=0" '
+        #              'frameborder="0" allowfullscreen=""></iframe>').format(video_key)
+        #     )
         return result
 
 
