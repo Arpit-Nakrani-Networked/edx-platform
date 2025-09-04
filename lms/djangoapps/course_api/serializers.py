@@ -116,7 +116,7 @@ class CourseSerializer(serializers.Serializer):  # pylint: disable=abstract-meth
     mobile_available = serializers.BooleanField()
     hidden = serializers.SerializerMethodField()
     invitation_only = serializers.BooleanField()
-    course_visibility = serializers.CharField()
+    catalog_visibility = serializers.CharField()
 
     # 'course_id' is a deprecated field, please use 'id' instead.
     course_id = serializers.CharField(source='id', read_only=True)
@@ -127,7 +127,7 @@ class CourseSerializer(serializers.Serializer):  # pylint: disable=abstract-meth
         Represents whether course is hidden in LMS
         """
         catalog_visibility = course_overview.catalog_visibility
-        return catalog_visibility in ['about', 'none'] or course_overview.id.deprecated  # Old Mongo should be hidden
+        return catalog_visibility in ['none'] or course_overview.id.deprecated  # Old Mongo should be hidden
 
     def get_blocks_url(self, course_overview):
         """

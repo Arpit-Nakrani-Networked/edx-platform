@@ -50,6 +50,7 @@ from xmodule.course_block import (
     COURSE_VISIBILITY_PUBLIC,
     COURSE_VISIBILITY_PUBLIC_OUTLINE,
     CATALOG_VISIBILITY_CATALOG_AND_ABOUT,
+    CATALOG_VISIBILITY_ABOUT
 )
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError, NoPathToItem
@@ -294,7 +295,7 @@ def courses(request):
     if not settings.FEATURES.get('ENABLE_COURSE_DISCOVERY'):
         courses_list = get_courses(
             request.user,
-            filter_={"catalog_visibility": CATALOG_VISIBILITY_CATALOG_AND_ABOUT},
+            filter_={"catalog_visibility__in": [CATALOG_VISIBILITY_CATALOG_AND_ABOUT,CATALOG_VISIBILITY_ABOUT]},
         )
 
         if configuration_helpers.get_value("ENABLE_COURSE_SORTING_BY_START_DATE",

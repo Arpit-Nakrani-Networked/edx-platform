@@ -95,7 +95,7 @@ def _create_catalog_data_for_signal(course_key: CourseKey) -> (Optional[datetime
                 enrollment_start=course.enrollment_start,
                 enrollment_end=course.enrollment_end,
             ),
-            hidden=course.catalog_visibility in ['about', 'none'] or course_key.deprecated,
+            hidden=course.catalog_visibility in ['none'] or course_key.deprecated,
             invitation_only=course.invitation_only,
         )
 
