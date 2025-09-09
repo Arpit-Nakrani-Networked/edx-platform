@@ -60,7 +60,9 @@ class CourseListGetForm(UsernameValidatorMixin, Form):
     filter_type = namedtuple('filter_type', ['param_name', 'field_name'])
     supported_filters = [
         filter_type(param_name='mobile', field_name='mobile_available'),
+        filter_type(param_name='catalog_visibility', field_name='catalog_visibility'),
     ]
+    catalog_visibility = CharField(required=False)
     mobile = ExtendedNullBooleanField(required=False)
     active_only = ExtendedNullBooleanField(required=False)
     permissions = MultiValueField(required=False)
@@ -78,8 +80,10 @@ class CourseListGetForm(UsernameValidatorMixin, Form):
         for supported_filter in self.supported_filters:
             if cleaned_data.get(supported_filter.param_name) is not None:
                 filter_[supported_filter.field_name] = cleaned_data[supported_filter.param_name]
+        # ✅ special case: drop catalog_visibility if it's empty string
+        if filter_.get("catalog_visibility") == "":
+            del filter_["catalog_visibility"]
         cleaned_data['filter_'] = filter_ or None
-
         return cleaned_data
 
     def clean_course_keys(self):

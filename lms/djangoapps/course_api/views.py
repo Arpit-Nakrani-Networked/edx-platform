@@ -326,7 +326,8 @@ class CourseListView(DeveloperErrorViewMixin, ListAPIView):
                 "org": "edX",
                 "start": "2015-07-17T12:00:00Z",
                 "start_display": "July 17, 2015",
-                "start_type": "timestamp"
+                "start_type": "timestamp",
+                "catalog_visibility": "both"
               }
             ]
     """
