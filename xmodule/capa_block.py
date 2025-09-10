@@ -190,7 +190,8 @@ class ProblemBlock(
         display_name=_("Maximum Attempts"),
         help=_("Defines the number of times a student can try to answer this problem. "
                "If the value is not set, infinite attempts are allowed."),
-        values={"min": 0}, scope=Scope.settings
+        values={"min": 0}, scope=Scope.settings,
+        default=1,
     )
     grading_method = String(
         display_name=_("Grading Method"),
@@ -1311,7 +1312,7 @@ class ProblemBlock(
             save_message = _(
                 "Your answers were previously saved. Click '{button_name}' to grade them."
             ).format(button_name=self.submit_button_name())
-
+        
         context = {
             'problem': content,
             'id': str(self.location),
