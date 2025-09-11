@@ -1016,9 +1016,11 @@ class ProblemBlock(
         # The logic flow is a little odd so that _('xxx') strings can be found for
         # translation while also running _() just once for each string.
         _ = self.runtime.service(self, "i18n").gettext
-        submit = _('Submit')
-
-        return submit
+        attempted = self.attempts >= self.max_attempts
+        if attempted:
+            return _('Submitted')
+        else:
+            return _('Submit')
 
     def submit_button_submitting_name(self):
         """
