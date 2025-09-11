@@ -60,6 +60,7 @@ class CourseBlockSerializer(serializers.Serializer):
                 'lms_web_url': block['lms_web_url'] if enable_links else None,
                 'resume_block': block.get('resume_block', False),
                 'type': block_type,
+                'graded': graded,
                 'has_scheduled_content': block.get('has_scheduled_content'),
                 'hide_from_toc': block.get('hide_from_toc'),
             },
