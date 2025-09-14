@@ -49,7 +49,7 @@ def get_visible_courses(org=None, filter_=None, active_only=False, course_keys=N
     else:
         courses = CourseOverview.get_all_courses(filter_=filter_, active_only=active_only, course_keys=course_keys)
 
-    courses = courses.order_by('start')
+    courses = courses.order_by('-start')
 
     # Filtering can stop here.
     if current_site_orgs:
