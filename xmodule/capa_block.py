@@ -1453,8 +1453,10 @@ class ProblemBlock(
         """
         Is the student still allowed to submit answers?
         """
-        if self.used_all_attempts():
+        if self.used_all_attempts() and self.graded is True:
             return True
+        if self.used_all_attempts():
+            return False
         if self.is_past_due():
             return True
 

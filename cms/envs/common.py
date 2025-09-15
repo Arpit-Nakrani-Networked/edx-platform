@@ -2481,7 +2481,7 @@ ZENDESK_GROUP_ID_MAPPING = {}
 
 # Once a user has watched this percentage of a video, mark it as complete:
 # (0.0 = 0%, 1.0 = 100%)
-COMPLETION_VIDEO_COMPLETE_PERCENTAGE = 0.95
+COMPLETION_VIDEO_COMPLETE_PERCENTAGE = 0
 
 ############### Settings for edx-rbac  ###############
 SYSTEM_WIDE_ROLE_CLASSES = []
