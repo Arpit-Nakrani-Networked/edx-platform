@@ -575,7 +575,8 @@ class GradebookView(GradeViewMixin, PaginatedAPIView):
                 q_objects.append(
                     Q(user__username__icontains=search_term) |
                     Q(programcourseenrollment__program_enrollment__external_user_key__icontains=search_term) |
-                    Q(user__email__icontains=search_term)
+                    Q(user__email__icontains=search_term) |
+                    Q(user__profile__name__icontains=search_term)
                 )
             if request.GET.get('username_contains'):
                 q_objects.append(Q(user__username__icontains=request.GET.get('username_contains')))

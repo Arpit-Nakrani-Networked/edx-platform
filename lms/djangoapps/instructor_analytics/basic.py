@@ -32,6 +32,7 @@ from lms.djangoapps.verify_student.services import IDVerificationService
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_api.accounts.serializers import AccountLegacyProfileSerializer
 from openedx.core.djangolib.markup import HTML, Text
+from django.db.models import Q
 
 log = logging.getLogger(__name__)
 
@@ -109,14 +110,19 @@ def enrolled_students_features(course_key, features,search_term=""):
 
 
     filters = {
-    "courseenrollment__course_id": course_key,
-    "courseenrollment__is_active": True,
+        "courseenrollment__course_id": course_key,
+        "courseenrollment__is_active": True,
     }
-    print('search_term',search_term)
-    if search_term:
-        filters["username__icontains"] = search_term
 
-    students = User.objects.filter(**filters).select_related("profile").order_by("username")
+    students = User.objects.filter(**filters).select_related("profile").order_by("profile__name")
+
+    if search_term:
+        search_filter = (
+            Q(email__icontains=search_term)
+            | Q(username__icontains=search_term)
+            | Q(profile__name__icontains=search_term)
+        )
+        students = students.filter(search_filter)
 
     if include_cohort_column:
         students = students.prefetch_related('course_groups')
