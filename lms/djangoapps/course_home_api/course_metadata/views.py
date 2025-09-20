@@ -46,6 +46,7 @@ class CourseHomeMetadataView(RetrieveAPIView):
         username: (str) The requesting (or masqueraded) user. Returns None for an
             unauthenticated user.
         is_enrolled: (bool) Indicates if the user is enrolled in the course
+        enrolled_date: (datetime) The date when the user enrolled in the course. Returns None if not enrolled.
         is_self_paced: (bool) Indicates if the course is self paced
         is_staff: (bool) Indicates if the user is staff
         original_user_is_staff: (bool) Indicates if the original user has staff access
@@ -134,6 +135,7 @@ class CourseHomeMetadataView(RetrieveAPIView):
             'title': course.display_name_with_default,
             'is_self_paced': getattr(course, 'self_paced', False),
             'is_enrolled': user_is_enrolled,
+            'enrolled_date': enrollment.created if enrollment and enrollment.is_active else None,
             'course_access': load_access.to_json(),
             'celebrations': celebrations,
             'user_timezone': user_timezone,

@@ -52,6 +52,7 @@ class CourseHomeMetadataSerializer(VerifiedModeSerializer):
     org = serializers.CharField()
     original_user_is_staff = serializers.BooleanField()
     start = serializers.DateTimeField()  # used for certain access denied errors
+    enrolled_date = serializers.DateTimeField()  # used for certain access denied errors
     tabs = CourseTabSerializer(many=True)
     title = serializers.CharField()
     username = serializers.CharField()
