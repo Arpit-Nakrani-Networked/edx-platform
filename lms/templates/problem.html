@@ -18,6 +18,14 @@ from openedx.core.djangolib.markup import HTML, Text
     margin-top: 15px !important;
     border-radius: 12px !important;
   }
+  .btn-primary-color{
+    background-color: #0D68F9;
+    border-color: #0D68F9;
+  }
+  button.btn-primary-color:not(:disabled):hover{
+    background-color: #0D68F9 !important;
+    border-color: #0D68F9 !important;
+  }
 </style>
 <div class="problem">
   ${ HTML(problem['html']) }
@@ -60,7 +68,7 @@ from openedx.core.djangolib.markup import HTML, Text
         <button type="button" class="show problem-action-btn btn-link btn-small" aria-describedby="${ short_id }-problem-title"><span class="show-label">${_('Show answer')}</span></button>
     </span> -->
     <div class="submit-attempt-container">
-      <button type="button" class="submit btn-brand" data-submitting="${ submit_button_submitting }" data-value="${ submit_button }" data-should-enable-submit-button="${ should_enable_submit_button }" aria-describedby="submission_feedback_${short_id}" ${'' if should_enable_submit_button else 'disabled'}>
+      <button type="button" class="submit btn-brand btn-primary-color" data-submitting="${ submit_button_submitting }" data-value="${ submit_button }" data-should-enable-submit-button="${ should_enable_submit_button }" aria-describedby="submission_feedback_${short_id}" ${'' if should_enable_submit_button else 'disabled'}>
           <span class="submit-label">${ submit_button }</span>
       </button>
 
