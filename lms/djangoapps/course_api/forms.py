@@ -59,6 +59,7 @@ class CourseListGetForm(UsernameValidatorMixin, Form):
     # white list of all supported filter fields
     filter_type = namedtuple('filter_type', ['param_name', 'field_name'])
     supported_filters = [
+        filter_type(param_name='search_term', field_name='display_name__icontains'),
         filter_type(param_name='mobile', field_name='mobile_available'),
         filter_type(param_name='catalog_visibility', field_name='catalog_visibility'),
     ]

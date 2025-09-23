@@ -169,7 +169,7 @@ def list_courses(request,
     course_qs = get_courses(
         user, org=org, filter_=filter_, permissions=permissions, active_only=active_only, course_keys=course_keys
     )
-    course_qs = _filter_by_search(course_qs, search_term, mobile_search)
+    # course_qs = _filter_by_search(course_qs, search_term, mobile_search)
     return course_qs
 
 
