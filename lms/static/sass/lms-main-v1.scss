@@ -1,6 +1,10 @@
 // LMS - CSS application architecture
 // Version 1 styling (pre-Pattern Library)
 // ====================
-
+@import 'https://cdn.jsdelivr.net/npm/@dannymichel/proxima-nova@4.5.2/index.min.css';
 @import 'build-base-v1';
 @import 'build-lms-v1'; // shared app style assets/rendering
+
+body,h1,h2,.home>header .title>.heading-group p,section.outside-app h1,h3,h4,h5,h6,p,label,button {
+    font-family: 'Proxima Nova' !important
+}

@@ -1622,7 +1622,7 @@ def render_xblock(request, usage_key_string, check_if_enrolled=True, disable_sta
             if completion_service.blocks_to_mark_complete_on_view({block}):
                 enable_completion_on_view_service = True
                 student_view_context['wrap_xblock_data'] = {
-                    'mark-completed-on-view-after-delay': 0
+                    'mark-completed-on-view-after-delay': 1
                 }
 
         missed_deadlines, missed_gated_content = dates_banner_should_display(course_key, request.user)

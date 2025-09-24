@@ -102,7 +102,7 @@ class VerticalBlock(
         completion_service = self.runtime.service(self, 'completion')
         if completion_service and completion_service.completion_tracking_enabled():
             child_blocks_to_complete_on_view = completion_service.blocks_to_mark_complete_on_view(child_blocks)
-            complete_on_view_delay = 0
+            complete_on_view_delay = 1
 
         child_context['child_of_vertical'] = True
         is_child_of_vertical = context.get('child_of_vertical', False)

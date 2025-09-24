@@ -1,5 +1,27 @@
 // studio - views - how it works
 // ====================
+@import 'https://cdn.jsdelivr.net/npm/@dannymichel/proxima-nova@4.5.2/index.min.css';
+
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+label,
+.home>header .title>.heading-group p,
+section.outside-app h1,
+h3,
+h4,
+h5,
+h6,
+p,
+label,
+button, html body * {
+  font-family: 'Proxima Nova' !important
+}
 
 .view-howitworks {
   &.not-signedin {
@@ -129,6 +151,7 @@
     }
 
     .content-features {
+
       // indiv features
       .feature {
         @include clearfix();
@@ -204,7 +227,7 @@
             margin: 0 0 ($baseline/2) 0;
           }
 
-          > p {
+          >p {
             @extend %t-copy-lead1;
 
             color: $gray-d1;
