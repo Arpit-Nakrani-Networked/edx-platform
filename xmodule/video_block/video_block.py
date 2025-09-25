@@ -426,7 +426,7 @@ class VideoBlock(
             # isn't on the filesystem
             'captionDataDir': getattr(self, 'data_dir', None),
             'completionEnabled': completion_enabled,
-            'completionPercentage': settings.COMPLETION_VIDEO_COMPLETE_PERCENTAGE,
+            'completionPercentage': 0.01,
             'duration': video_duration,
             'end': self.end_time.total_seconds(),  # pylint: disable=no-member
             'generalSpeed': self.global_speed,
