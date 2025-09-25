@@ -66,7 +66,7 @@
 }
 
 .mce-content-body p {
-    margin-bottom: 1.416em;
+    margin-bottom: 0;
     font-size: 1em;
     line-height: 1.6em !important;
     color: #3c3c3c;
@@ -81,7 +81,7 @@
 }
 
 .mce-content-body p + p, .mce-content-body ul + p, .mce-content-body ol + p {
-    margin-top: 20px;
+    margin-top: 0;
 }
 
 .mce-content-body ol, .mce-content-body ul {

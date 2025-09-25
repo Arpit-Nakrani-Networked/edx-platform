@@ -417,11 +417,6 @@ class CourseNavigationBlocksView(RetrieveAPIView):
     )
 
     serializer_class = CourseBlockSerializer
-    COURSE_BLOCKS_CACHE_KEY_TEMPLATE = (
-        'course_sidebar_blocks_{course_key_string}_{course_version}_{user_id}_{user_cohort_id}'
-        '_{enrollment_mode}_{allow_public}_{allow_public_outline}_{is_masquerading}'
-    )
-    COURSE_BLOCKS_CACHE_TIMEOUT = 60 * 60  # 1 hour
 
     def get(self, request, *args, **kwargs):
         """
@@ -446,34 +441,13 @@ class CourseNavigationBlocksView(RetrieveAPIView):
         allow_public_outline = allow_anonymous and course.course_visibility == COURSE_VISIBILITY_PUBLIC_OUTLINE
         enrollment = CourseEnrollment.get_enrollment(request.user, course_key)
 
-        try:
-            user_cohort = get_cohort(request.user, course_key, use_cached=True)
-        except ValueError:
-            user_cohort = None
-
-        cache_key = self.COURSE_BLOCKS_CACHE_KEY_TEMPLATE.format(
-            course_key_string=course_key_string,
-            course_version=str(course.course_version),
-            user_id=request.user.id,
-            enrollment_mode=getattr(enrollment, 'mode', ''),
-            user_cohort_id=getattr(user_cohort, 'id', ''),
-            allow_public=allow_public,
-            allow_public_outline=allow_public_outline,
-            is_masquerading=user_is_masquerading,
-        )
-        if navigation_sidebar_caching_is_disabled := courseware_disable_navigation_sidebar_blocks_caching():
-            course_blocks = None
+        # Always fetch fresh course blocks without caching
+        if getattr(enrollment, 'is_active', False) or bool(staff_access):
+            course_blocks = get_course_outline_block_tree(request, course_key_string, request.user)
+        elif allow_public_outline or allow_public or user_is_masquerading:
+            course_blocks = get_course_outline_block_tree(request, course_key_string, None)
         else:
-            course_blocks = cache.get(cache_key)
-
-        if not course_blocks:
-            if getattr(enrollment, 'is_active', False) or bool(staff_access):
-                course_blocks = get_course_outline_block_tree(request, course_key_string, request.user)
-            elif allow_public_outline or allow_public or user_is_masquerading:
-                course_blocks = get_course_outline_block_tree(request, course_key_string, None)
-
-            if not navigation_sidebar_caching_is_disabled:
-                cache.set(cache_key, course_blocks, self.COURSE_BLOCKS_CACHE_TIMEOUT)
+            course_blocks = None
 
         course_blocks = self.filter_inaccessible_blocks(course_blocks, course_key)
         course_blocks = self.mark_complete_recursive(course_blocks)

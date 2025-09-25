@@ -4844,8 +4844,8 @@ EDX_PLATFORM_REVISION = 'release'
 
 # Once a user has watched this percentage of a video, mark it as complete:
 # (0.0 = 0%, 1.0 = 100%)
-COMPLETION_VIDEO_COMPLETE_PERCENTAGE = 0.95
-COMPLETION_BY_VIEWING_DELAY_MS = 5000
+COMPLETION_VIDEO_COMPLETE_PERCENTAGE = 0.01
+COMPLETION_BY_VIEWING_DELAY_MS = 1
 
 ############### Settings for Django Rate limit #####################
 

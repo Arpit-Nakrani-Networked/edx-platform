@@ -2481,9 +2481,9 @@ ZENDESK_GROUP_ID_MAPPING = {}
 
 # Once a user has watched this percentage of a video, mark it as complete:
 # (0.0 = 0%, 1.0 = 100%)
-COMPLETION_VIDEO_COMPLETE_PERCENTAGE = 0
+COMPLETION_VIDEO_COMPLETE_PERCENTAGE = 0.01
 
-############### Settings for edx-rbac  ###############
+############### Settings for edx-rbac  ###############``
 SYSTEM_WIDE_ROLE_CLASSES = []
 
 ############## Installed Django Apps #########################
