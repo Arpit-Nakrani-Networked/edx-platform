@@ -93,11 +93,11 @@ class BlockStructureStore:
         """
         bs_model = self._get_model(root_block_usage_key)
 
-        try:
-            serialized_data = self._get_from_cache(bs_model)
-        except BlockStructureNotFound:
-            serialized_data = self._get_from_store(bs_model)
-            self._add_to_cache(serialized_data, bs_model)
+        # try:
+        #     serialized_data = self._get_from_cache(bs_model)
+        # except BlockStructureNotFound:
+        serialized_data = self._get_from_store(bs_model)
+            # self._add_to_cache(serialized_data, bs_model)
 
         return self._deserialize(serialized_data, root_block_usage_key)
 

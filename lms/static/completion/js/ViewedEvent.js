@@ -3,8 +3,8 @@
 function throttle(fn, wait) {
     let time = 0;
     function delay() {
-    // Do not call the function until at least `wait` seconds after the
-    // last time the function was called.
+        // Do not call the function until at least `wait` seconds after the
+        // last time the function was called.
         const now = Date.now();
         if (time + wait < now) {
             time = now;
@@ -61,8 +61,8 @@ export class ElementViewing {
     }
 
     markTopSeen() {
-    // If this element has been seen for enough time, but the top wasn't visible, it may now be
-    // considered viewed.
+        // If this element has been seen for enough time, but the top wasn't visible, it may now be
+        // considered viewed.
         this.topSeen = true;
         this.checkIfViewed();
     }
@@ -84,15 +84,15 @@ export class ElementViewing {
     }
 
     checkIfViewed() {
-    // User can provide a "now" value for testing purposes.
+        // User can provide a "now" value for testing purposes.
         if (this.hasBeenViewed) {
             return;
         }
-        if (this.areViewedCriteriaMet()) {
+        // if (this.areViewedCriteriaMet()) {
             this.hasBeenViewed = true;
             // Report to the tracker that we have been viewed
             this.callback(this.el, { elementHasBeenViewed: this.hasBeenViewed });
-        }
+        // }
     }
 }
 
@@ -110,11 +110,11 @@ export class ViewedEventTracker {
         this.elementViewings = new Set();
         this.handlers = [];
         if (window === window.parent) {
-          // Preview (legacy LMS frontend).
-          this.registerDomHandlers();
+            // Preview (legacy LMS frontend).
+            this.registerDomHandlers();
         } else {
-          // Learning MFE.
-          window.addEventListener('message', this.handleVisibilityMessage.bind(this));
+            // Learning MFE.
+            window.addEventListener('message', this.handleVisibilityMessage.bind(this));
         }
     }
 
@@ -130,7 +130,7 @@ export class ViewedEventTracker {
         // Update visibility status immediately after adding the element (in case it's already visible).
         // We don't need this for the Learning MFE because it will send a message once the iframe is loaded.
         if (window === window.parent) {
-          this.updateVisible();
+            this.updateVisible();
         }
     }
 
@@ -152,6 +152,8 @@ export class ViewedEventTracker {
             const now = Date.now(); // Use the same "now" for all calculations
             const rect = elv.getBoundingRect();
             let visible = false;
+            
+            elv.handleVisible(now);
 
             if (rect.top > 0 && rect.top < window.innerHeight) {
                 elv.markTopSeen(now);
@@ -191,32 +193,34 @@ export class ViewedEventTracker {
     /** Handle a unit.visibilityStatus message from the Learning MFE. */
     handleVisibilityMessage(event) {
         if (event.data.type === 'unit.visibilityStatus') {
-          const { topPosition, viewportHeight } = event.data.data;
+            // const { topPosition, viewportHeight } = event.data.data;
 
-          this.elementViewings.forEach((elv) => {
-              const rect = elv.getBoundingRect();
-              let visible = false;
+            this.elementViewings.forEach((elv) => {
+                // const rect = elv.getBoundingRect();
+                // elv.markTopSeen();
+                // elv.markBottomSeen();
+                // let visible = true;
 
-              // Convert iframe-relative rect coordinates to be relative to the parent's viewport.
-              const elTopPosition = rect.top + topPosition;
-              const elBottomPosition = rect.bottom + topPosition;
+                // Convert iframe-relative rect coordinates to be relative to the parent's viewport.
+                // const elTopPosition = rect.top + topPosition;
+                // const elBottomPosition = rect.bottom + topPosition;
+// visible = true;
+                // Check if the element is visible in the parent's viewport.
+                // if (elTopPosition < viewportHeight && elTopPosition >= 0) {
+                //     elv.markTopSeen();
+                //     visible = true;
+                // }
+                // if (elBottomPosition <= viewportHeight && elBottomPosition > 0) {
+                //     elv.markBottomSeen();
+                //     visible = true;
+                // }
 
-              // Check if the element is visible in the parent's viewport.
-              if (elTopPosition < viewportHeight && elTopPosition >= 0) {
-                  elv.markTopSeen();
-                  visible = true;
-              }
-              if (elBottomPosition <= viewportHeight && elBottomPosition > 0) {
-                  elv.markBottomSeen();
-                  visible = true;
-              }
-
-              if (visible) {
-                  elv.handleVisible();
-              } else {
-                  elv.handleNotVisible();
-              }
-          });
-      }
+                // if (visible) {
+                    elv.handleVisible();
+                // } else {
+                //     elv.handleNotVisible();
+                // }
+            });
+        }
     }
 }
