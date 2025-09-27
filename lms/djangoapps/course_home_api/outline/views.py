@@ -329,13 +329,21 @@ class OutlineTabView(RetrieveAPIView):
                     seq_data
                     for seq_data in chapter_data['children']
                     if (
-                        seq_data['id'] in available_seq_ids or
+                        (seq_data['id'] in available_seq_ids or
                         # Edge case: Sometimes we have weird course structures.
                         # We expect only sequentials here, but if there is
                         # another type, just skip it (don't filter it out).
-                        seq_data['type'] != 'sequential'
+                        seq_data['type'] != 'sequential') and
+                        # Filter out sequential blocks with 0 children
+                        not (seq_data['type'] == 'sequential' and len(seq_data.get('children', [])) == 0)
                     )
                 ] if 'children' in chapter_data else []
+
+            # Filter out empty sections with no child sequences (same as navigation API)
+            course_blocks['children'] = [
+                section for section in course_blocks['children']
+                if section.get('children', [])
+            ]
 
         user_has_passing_grade = False
         if not request.user.is_anonymous:
@@ -475,11 +483,17 @@ class CourseNavigationBlocksView(RetrieveAPIView):
             for section_data in course_sections:
                 section_data['children'] = self.get_accessible_sequences(
                     user_course_outline,
-                    section_data.get('children', ['completion'])
+                    section_data.get('children', [])
                 )
                 accessible_sequence_ids = {str(usage_key) for usage_key in user_course_outline.accessible_sequences}
                 for sequence_data in section_data['children']:
                     sequence_data['accessible'] = sequence_data['id'] in accessible_sequence_ids
+
+            # Filter out empty sections with no child sequences
+            course_blocks['children'] = [
+                section for section in course_blocks['children']
+                if section.get('children', [])
+            ]
 
         return course_blocks
 
@@ -560,7 +574,8 @@ class CourseNavigationBlocksView(RetrieveAPIView):
         available_sequence_ids = set(map(str, user_course_outline.sequences))
         return [
             seq_data for seq_data in course_sequences
-            if seq_data['id'] in available_sequence_ids or seq_data['type'] != 'sequential'
+            if (seq_data['id'] in available_sequence_ids or seq_data['type'] != 'sequential') and
+               not (seq_data['type'] == 'sequential' and len(seq_data.get('children', [])) == 0)
         ]
 
     @cached_property
