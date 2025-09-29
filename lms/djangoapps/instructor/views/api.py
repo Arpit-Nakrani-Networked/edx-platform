@@ -1509,10 +1509,12 @@ class GetStudentsFeatures(DeveloperErrorViewMixin, APIView):
 
         if not csv:
             student_data = instructor_analytics_basic.enrolled_students_features(course_key, query_features,search_term)
+            # Exclude the requesting user from the students list
+            filtered_student_data = [student for student in student_data if student.get('username') != request.user.username]
             response_payload = {
                 'course_id': str(course_key),
-                'students': student_data,
-                'students_count': len(student_data),
+                'students': filtered_student_data,
+                'students_count': len(filtered_student_data),
                 'queried_features': query_features,
                 'feature_names': query_features_names,
                 'available_features': available_features,
