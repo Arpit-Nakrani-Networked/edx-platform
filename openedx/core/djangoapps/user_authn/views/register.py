@@ -548,8 +548,8 @@ class RegistrationView(APIView):
         return HttpResponse(RegistrationFormFactory().get_registration_form(request).to_json(),  # lint-amnesty, pylint: disable=http-response-with-content-type-json
                             content_type="application/json")
 
+    # @method_decorator(ratelimit(key=REAL_IP_KEY, rate=settings.REGISTRATION_RATELIMIT, method='POST', block=False))
     @method_decorator(csrf_exempt)
-    @method_decorator(ratelimit(key=REAL_IP_KEY, rate=settings.REGISTRATION_RATELIMIT, method='POST', block=False))
     def post(self, request):
         """Create the user's account.
 
