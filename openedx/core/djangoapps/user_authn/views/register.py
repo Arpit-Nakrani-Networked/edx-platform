@@ -568,9 +568,9 @@ class RegistrationView(APIView):
                 address already exists
             HttpResponse: 403 operation not allowed
         """
-        should_be_rate_limited = getattr(request, 'limited', False)
-        if should_be_rate_limited:
-            return JsonResponse({'error_code': 'forbidden-request'}, status=403)
+        # should_be_rate_limited = getattr(request, 'limited', False)
+        # if should_be_rate_limited:
+        #     return JsonResponse({'error_code': 'forbidden-request'}, status=403)
 
         if is_require_third_party_auth_enabled() and not pipeline.running(request):
             # if request is not running a third-party auth pipeline

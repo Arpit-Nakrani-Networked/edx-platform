@@ -236,9 +236,9 @@ def _authenticate_first_party(request, unauthenticated_user, third_party_auth_re
     """
     Use Django authentication on the given request, using rate limiting if configured
     """
-    should_be_rate_limited = getattr(request, 'limited', False)
-    if should_be_rate_limited:
-        raise AuthFailedError(_('Too many failed login attempts. Try again later.'))  # lint-amnesty, pylint: disable=raise-missing-from
+    # should_be_rate_limited = getattr(request, 'limited', False)
+    # if should_be_rate_limited:
+    #     raise AuthFailedError(_('Too many failed login attempts. Try again later.'))  # lint-amnesty, pylint: disable=raise-missing-from
 
     # If the user doesn't exist, we want to set the username to an invalid username so that authentication is guaranteed
     # to fail and we can take advantage of the ratelimited backend
@@ -579,7 +579,7 @@ def login_user(request, api_version='v1'):  # pylint: disable=too-many-statement
         else:
             user = _get_user_by_email_or_username(request, api_version)
 
-        _check_excessive_login_attempts(user)
+        # _check_excessive_login_attempts(user)
 
         possibly_authenticated_user = user
 
