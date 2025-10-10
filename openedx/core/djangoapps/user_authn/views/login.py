@@ -683,7 +683,19 @@ def login_user(request, api_version='v1'):  # pylint: disable=too-many-statement
 @require_http_methods(['GET'])
 def common_redirect_to_login(request,userid):
     try:
-        response = requests.get(f'https://backend.lab.networked.co/api/v1/global/open-edx/lms-session-id/{userid}')
+        origin = request.get_host()  # e.g. "apps.courses.lab.networked.co"
+
+        if not origin:
+            # Default to QA if no origin found
+            base_url = "https://backend.qa.networked.co"
+        elif "lab" in origin:
+            base_url = "https://backend.lab.networked.co"
+        elif "qa" in origin:
+            base_url = "https://backend.qa.networked.co"
+        else:
+            base_url = "https://backend.networked.co"  # production
+            
+        response = requests.get(f'{base_url}/api/v1/global/open-edx/lms-session-id/{userid}')
         response.raise_for_status()
         data = response.json()
         
