@@ -22,7 +22,7 @@ Default grading policy for a course run.
 DEFAULT_GRADING_POLICY = {
     "GRADER": [
         {
-            "type": "Homework",
+            "type": "Graded",
             "short_label": "HW",
             "min_count": 1,
             "drop_count":0,
