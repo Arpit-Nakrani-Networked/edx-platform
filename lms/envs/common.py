@@ -4361,7 +4361,7 @@ PROFILE_IMAGE_DEFAULT_FILE_EXTENSION = 'png'
 # profile images. Once it has been set, changing it will make the
 # platform unaware of current image URLs.
 PROFILE_IMAGE_HASH_SEED = 'placeholder_secret_key'
-PROFILE_IMAGE_MAX_BYTES = 1024 * 1024
+PROFILE_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 PROFILE_IMAGE_MIN_BYTES = 100
 PROFILE_IMAGE_SIZES_MAP = {
     'full': 500,
