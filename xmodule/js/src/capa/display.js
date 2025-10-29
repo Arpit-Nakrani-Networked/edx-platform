@@ -380,15 +380,24 @@
 
         Problem.prototype.render = function(content, focusCallback) {
             var that = this;
+            console.log("SCROLL DEBUG: render called with focusCallback:", typeof focusCallback);
+
             if (content) {
+                console.log("SCROLL DEBUG: Setting HTML content");
                 edx.HtmlUtils.setHtml(this.el, edx.HtmlUtils.HTML(content));
                 return JavascriptLoader.executeModuleScripts(this.el, function() {
+                    console.log("SCROLL DEBUG: Module scripts executed, about to call callbacks");
                     that.setupInputTypes();
                     that.bind();
                     that.queueing(focusCallback);
                     that.renderProgressState();
-                    // eslint-disable-next-line no-void
-                    return typeof focusCallback === 'function' ? focusCallback() : void 0;
+
+                    // Add delay to ensure DOM is fully updated
+                    setTimeout(function() {
+                        console.log("SCROLL DEBUG: About to call focusCallback");
+                        // eslint-disable-next-line no-void
+                        return typeof focusCallback === 'function' ? focusCallback() : void 0;
+                    }, 50);
                 });
             } else {
                 return $.postWithPrefix('' + this.url + '/problem_get', function(response) {
@@ -483,13 +492,463 @@
         Problem.prototype.focus_on_notification = function(type) {
             var notification;
             notification = this.$('.notification-' + type);
+            console.log("SCROLL DEBUG: Looking for notification type:", type);
+            console.log("SCROLL DEBUG: Found notifications:", notification.length);
+
             if (notification.length > 0) {
+                var element = notification[0];
+                console.log("SCROLL DEBUG: Element details:", {
+                    element: element,
+                    visible: element.offsetHeight > 0 && element.offsetWidth > 0,
+                    offsetHeight: element.offsetHeight,
+                    offsetWidth: element.offsetWidth,
+                    className: element.className,
+                    getBoundingClientRect: element.getBoundingClientRect()
+                });
+
+                // Store initial scroll position to detect if default scroll works
+                var initialScrollY = window.pageYOffset || document.documentElement.scrollTop;
+
                 notification.focus();
+                console.log("SCROLL DEBUG: Focus set, initial scroll position:", initialScrollY);
+
+                // Give the default focus behavior time to scroll, then check if it worked
+                var that = this;
+                setTimeout(function() {
+                    var currentScrollY = window.pageYOffset || document.documentElement.scrollTop;
+                    var rect = element.getBoundingClientRect();
+                    var isInViewport = rect.top >= 0 && rect.top <= window.innerHeight;
+                    var scrollHappened = Math.abs(currentScrollY - initialScrollY) > 10; // 10px threshold
+
+                    console.log("SCROLL DEBUG: Post-focus check:", {
+                        initialScrollY: initialScrollY,
+                        currentScrollY: currentScrollY,
+                        scrollHappened: scrollHappened,
+                        isInViewport: isInViewport
+                    });
+
+                    // Only use enhanced scroll if default didn't work
+                    if (!isInViewport && !scrollHappened) {
+                        console.log("SCROLL DEBUG: Default scroll didn't work, using enhanced scroll");
+                        that.scrollToNotification(element);
+                    } else {
+                        console.log("SCROLL DEBUG: Default scroll worked or element is visible, skipping enhanced scroll");
+                    }
+                }, 200); // Check after 200ms
+
+            } else {
+                console.log("SCROLL DEBUG: No notification element found for type:", type);
             }
+        };
+
+        Problem.prototype.scrollToNotification = function(element) {
+            var that = this;
+            console.log("SCROLL DEBUG: scrollToNotification called with element:", element);
+
+            // Function to perform the smooth scroll
+            var performSmoothScroll = function() {
+                console.log("SCROLL DEBUG: performSmoothScroll called");
+                try {
+                    var rect = element.getBoundingClientRect();
+                    var isInViewport = rect.top >= 0 && rect.top <= window.innerHeight;
+
+                    console.log("SCROLL DEBUG: Element position:", {
+                        top: rect.top,
+                        bottom: rect.bottom,
+                        height: rect.height,
+                        isInViewport: isInViewport,
+                        windowHeight: window.innerHeight,
+                        currentScrollY: window.pageYOffset || document.documentElement.scrollTop
+                    });
+
+                    if (isInViewport) {
+                        console.log("SCROLL DEBUG: Element already in viewport, no scroll needed");
+                        return;
+                    }
+
+                    // Calculate optimal scroll position
+                    var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    var targetTop = rect.top + scrollTop - 80; // Position 80px from top for better visibility
+
+                    // Ensure we don't scroll above the document
+                    targetTop = Math.max(0, targetTop);
+
+                    console.log("SCROLL DEBUG: Calculated scroll target:", targetTop);
+
+                    // Try smooth scroll methods in order of preference
+                    var scrollSuccess = false;
+
+                    // Method 1: jQuery animate (smoothest and most reliable)
+                    if (window.$ && window.$.fn.animate && !scrollSuccess) {
+                        console.log("SCROLL DEBUG: Using jQuery smooth animate");
+                        window.$('html, body').animate({
+                            scrollTop: targetTop
+                        }, {
+                            duration: 800,  // Smooth 800ms animation
+                            easing: 'swing', // Nice easing curve
+                            complete: function() {
+                                console.log("SCROLL DEBUG: jQuery scroll animation completed");
+                                that.highlightNotification(element);
+                            }
+                        });
+                        scrollSuccess = true;
+                    }
+
+                    // Method 2: Native scrollIntoView with custom positioning
+                    if (!scrollSuccess && element.scrollIntoView) {
+                        console.log("SCROLL DEBUG: Using scrollIntoView with custom positioning");
+
+                        // First scroll to general area
+                        element.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'center',
+                            inline: 'nearest'
+                        });
+
+                        // Then fine-tune the position after a brief delay
+                        setTimeout(function() {
+                            var newRect = element.getBoundingClientRect();
+                            var newScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                            var adjustedTarget = newRect.top + newScrollTop - 80;
+
+                            if (window.scrollTo) {
+                                window.scrollTo({
+                                    top: adjustedTarget,
+                                    behavior: 'smooth'
+                                });
+                            }
+
+                            
+                            // Add highlight after scroll completes
+                            setTimeout(function() {
+                                that.highlightNotification(element);
+                            }, 500);
+                        }, 100);
+
+                        scrollSuccess = true;
+                    }
+
+                    // Method 3: Custom smooth scroll implementation
+                    if (!scrollSuccess && window.scrollTo) {
+                        console.log("SCROLL DEBUG: Using custom smooth scroll");
+
+                        try {
+                            window.scrollTo({
+                                top: targetTop,
+                                left: 0,
+                                behavior: 'smooth'
+                            });
+
+                            // Add highlight after scroll completes
+                            setTimeout(function() {
+                                that.highlightNotification(element);
+                            }, 800);
+
+                            scrollSuccess = true;
+                        } catch (e) {
+                            // Fallback: animated scroll for older browsers
+                            that.animateScrollTo(targetTop);
+
+                            // Add highlight after animation completes
+                            setTimeout(function() {
+                                that.highlightNotification(element);
+                            }, 900);
+
+                            scrollSuccess = true;
+                        }
+                    }
+
+                    console.log("SCROLL DEBUG: Smooth scroll attempt completed, success:", scrollSuccess);
+
+                } catch (error) {
+                    console.log('SCROLL DEBUG: Smooth scroll failed:', error);
+                }
+            };
+
+            // Check element visibility
+            var isVisible = element.offsetHeight > 0 && element.offsetWidth > 0;
+            console.log("SCROLL DEBUG: Element visibility check:", {
+                offsetHeight: element.offsetHeight,
+                offsetWidth: element.offsetWidth,
+                isVisible: isVisible
+            });
+
+            if (!isVisible) {
+                console.log("SCROLL DEBUG: Element not visible, setting up MutationObserver");
+
+                // Element not yet visible, use MutationObserver to wait for it
+                var observer = new MutationObserver(function(mutations) {
+                    console.log("SCROLL DEBUG: MutationObserver triggered, checking visibility");
+
+                    mutations.forEach(function(mutation) {
+                        if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                            var targetElement = that.$('.notification-submit')[0];
+                            if (targetElement && targetElement.offsetHeight > 0 && targetElement.offsetWidth > 0) {
+                                console.log("SCROLL DEBUG: Target element now visible, performing smooth scroll");
+                                observer.disconnect();
+                                setTimeout(performSmoothScroll, 150); // Small delay to ensure rendering
+                            }
+                        }
+                    });
+                });
+
+                // Start observing the problem container
+                var problemElement = that.el[0] || document.body;
+                observer.observe(problemElement, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['style', 'class']
+                });
+
+                // Safety timeout to prevent infinite waiting
+                setTimeout(function() {
+                    console.log("SCROLL DEBUG: MutationObserver timeout, forcing smooth scroll");
+                    observer.disconnect();
+                    performSmoothScroll(); // Try scrolling anyway
+                }, 3000);
+
+                // Also try immediate scroll as fallback
+                setTimeout(performSmoothScroll, 150);
+
+            } else {
+                console.log("SCROLL DEBUG: Element is visible, scrolling immediately");
+                // Element is visible, scroll with small delay to ensure DOM is stable
+                setTimeout(performSmoothScroll, 150);
+            }
+        };
+
+        Problem.prototype.shouldUseAdditionalScroll = function(element) {
+            var that = this;
+
+            // Check if element is in viewport
+            var rect = element.getBoundingClientRect();
+            var isInViewport = rect.top >= 0 && rect.top <= window.innerHeight;
+
+            // Check if element has notification-btn class (existing scroll mechanism target)
+            var hasNotificationBtn = element.classList.contains('notification-btn');
+
+            // Check if we're in an iframe
+            var isInIframe = window.parent !== window;
+
+            console.log("SCROLL DEBUG: Scroll decision factors:", {
+                isInViewport: isInViewport,
+                hasNotificationBtn: hasNotificationBtn,
+                isInIframe: isInIframe
+            });
+
+            // Use additional scroll only if element is not in viewport and lacks notification-btn class
+            // Give the default mechanism time to work first
+            if (!isInViewport && !hasNotificationBtn) {
+                // Wait a bit to see if default scroll mechanism kicks in
+                setTimeout(function() {
+                    var newRect = element.getBoundingClientRect();
+                    var nowInViewport = newRect.top >= 0 && newRect.top <= window.innerHeight;
+
+                    console.log("SCROLL DEBUG: After delay check - now in viewport:", nowInViewport);
+
+                    if (!nowInViewport) {
+                        console.log("SCROLL DEBUG: Default scroll didn't work, applying enhanced scroll");
+                        that.scrollToNotification(element);
+                    }
+                }, 500); // Wait 500ms for default scroll
+
+                return false; // Don't scroll immediately
+            }
+
+            // For iframe contexts, always enhance (but with delay)
+            if (isInIframe && !isInViewport) {
+                return true;
+            }
+
+            return false; // Default scroll should handle it
+        };
+
+        Problem.prototype.animateScrollTo = function(targetTop) {
+            console.log("SCROLL DEBUG: Using custom animation fallback");
+
+            var startTop = window.pageYOffset || document.documentElement.scrollTop;
+            var distance = targetTop - startTop;
+            var duration = 800; // 800ms animation
+            var startTime = null;
+
+            // Easing function for smooth animation
+            var easeInOutQuad = function(t, b, c, d) {
+                t /= d / 2;
+                if (t < 1) return c / 2 * t * t + b;
+                t--;
+                return -c / 2 * (t * (t - 2) - 1) + b;
+            };
+
+            var animateStep = function(currentTime) {
+                if (startTime === null) startTime = currentTime;
+                var timeElapsed = currentTime - startTime;
+                var progress = Math.min(timeElapsed / duration, 1);
+
+                var currentPosition = easeInOutQuad(timeElapsed, startTop, distance, duration);
+
+                window.scrollTo(0, currentPosition);
+
+                if (progress < 1) {
+                    window.requestAnimationFrame(animateStep);
+                } else {
+                    console.log("SCROLL DEBUG: Custom animation completed");
+                }
+            };
+
+            window.requestAnimationFrame(animateStep);
+        };
+
+        Problem.prototype.highlightNotification = function(element) {
+            if (!element || !window.$) return;
+
+            console.log("SCROLL DEBUG: Adding highlight effect to notification");
+
+            var $element = window.$(element);
+            var originalBorder = $element.css('border');
+            var originalBoxShadow = $element.css('box-shadow');
+            var originalTransition = $element.css('transition');
+
+            // Add smooth transition
+            $element.css('transition', 'all 0.3s ease');
+
+            // Add highlight effect
+            $element.css({
+                'border': '2px solid #4CAF50',
+                'box-shadow': '0 0 15px rgba(76, 175, 80, 0.4)',
+                'background-color': 'rgba(76, 175, 80, 0.05)'
+            });
+
+            // Remove highlight after 2 seconds
+            setTimeout(function() {
+                $element.css('transition', 'all 0.5s ease');
+                $element.css({
+                    'border': originalBorder,
+                    'box-shadow': originalBoxShadow,
+                    'background-color': ''
+                });
+
+                // Restore original transition after animation
+                setTimeout(function() {
+                    $element.css('transition', originalTransition);
+                }, 500);
+            }, 2000);
         };
 
         Problem.prototype.focus_on_submit_notification = function() {
             this.focus_on_notification('submit');
+        };
+
+        Problem.prototype.notifyParentOfSubmission = function() {
+            var that = this;
+
+            // Check if we're in an iframe
+            if (window.parent && window.parent !== window) {
+                try {
+                    // Send message to parent window to scroll to result
+                    window.parent.postMessage({
+                        type: 'quiz.submission.complete',
+                        action: 'scrollToResult',
+                        timestamp: Date.now()
+                    }, '*');
+                } catch (error) {
+                    console.log('Could not notify parent of submission:', error);
+                }
+            }
+
+            // Only use force scroll as a last resort after checking if normal scroll worked
+            setTimeout(function() {
+                var notification = that.$('.notification-submit');
+                if (notification.length > 0) {
+                    var element = notification[0];
+                    var rect = element.getBoundingClientRect();
+                    var isInViewport = rect.top >= 0 && rect.top <= window.innerHeight;
+
+                    console.log("SCROLL DEBUG: Post-scroll check - element in viewport:", isInViewport);
+
+                    // Only force scroll if the element is still not visible after normal scroll attempts
+                    if (!isInViewport) {
+                        console.log("SCROLL DEBUG: Normal scroll didn't work, using force scroll");
+                        that.forceScrollToSubmitNotification();
+                    } else {
+                        console.log("SCROLL DEBUG: Normal scroll worked, skipping force scroll");
+                    }
+                }
+            }, 1000); // Wait longer to see if normal scroll worked
+        };
+
+        Problem.prototype.forceScrollToSubmitNotification = function() {
+            console.log("SCROLL DEBUG: forceScrollToSubmitNotification called");
+            var that = this;
+
+            // Find any notification element
+            var notification = this.$('.notification-submit');
+            if (notification.length === 0) {
+                // Try other notification selectors
+                notification = this.$('.notification');
+                console.log("SCROLL DEBUG: Fallback to .notification, found:", notification.length);
+            }
+
+            if (notification.length > 0) {
+                var element = notification[0];
+                console.log("SCROLL DEBUG: Force scroll - found element:", element);
+
+                // Wait a bit more for any animations/transitions to complete
+                setTimeout(function() {
+                    try {
+                        var rect = element.getBoundingClientRect();
+                        var scrollTarget = (window.pageYOffset || document.documentElement.scrollTop) + rect.top - 80;
+
+                        console.log("SCROLL DEBUG: Force scroll target calculated:", scrollTarget);
+
+                        // Use the smoothest scroll method available
+                        if (window.$ && window.$.fn.animate) {
+                            console.log("SCROLL DEBUG: Force scroll using jQuery animate");
+                            window.$('html, body').animate({
+                                scrollTop: scrollTarget
+                            }, {
+                                duration: 600,
+                                easing: 'swing',
+                                complete: function() {
+                                    console.log("SCROLL DEBUG: Force scroll animation completed");
+                                    that.highlightNotification(element);
+                                }
+                            });
+                        } else if (window.scrollTo) {
+                            console.log("SCROLL DEBUG: Force scroll using window.scrollTo");
+                            try {
+                                window.scrollTo({
+                                    top: scrollTarget,
+                                    behavior: 'smooth'
+                                });
+                                setTimeout(function() {
+                                    that.highlightNotification(element);
+                                }, 600);
+                            } catch (e) {
+                                // Use custom animation fallback
+                                that.animateScrollTo(scrollTarget);
+                                setTimeout(function() {
+                                    that.highlightNotification(element);
+                                }, 800);
+                            }
+                        } else if (element.scrollIntoView) {
+                            console.log("SCROLL DEBUG: Force scroll using scrollIntoView");
+                            element.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'start'
+                            });
+                            setTimeout(function() {
+                                that.highlightNotification(element);
+                            }, 500);
+                        }
+
+                    } catch (error) {
+                        console.log("SCROLL DEBUG: Force scroll failed:", error);
+                    }
+                }, 200);
+            } else {
+                console.log("SCROLL DEBUG: No notification element found for forced scroll");
+            }
         };
 
         Problem.prototype.focus_on_hint_notification = function(hintIndex) {
@@ -614,6 +1073,8 @@
                         case 'correct':
                             that.render(response.contents);
                             that.updateProgress(response);
+                            // Send iframe scroll message to parent if in iframe context
+                            that.notifyParentOfSubmission();
                             break;
                         default:
                             that.gentle_alert(response.success);
@@ -646,6 +1107,8 @@
                     that.el.trigger('contentChanged', [that.id, response.contents, response]);
                     that.render(response.contents, that.focus_on_submit_notification);
                     that.updateProgress(response);
+                    // Send iframe scroll message to parent if in iframe context
+                    that.notifyParentOfSubmission();
                     // This is used by the Learning MFE to know when the Entrance Exam has been passed
                     // for a user. The MFE is then able to respond appropriately.
                     if (response.entrance_exam_passed) {

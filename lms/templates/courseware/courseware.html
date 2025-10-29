@@ -148,6 +148,56 @@ from openedx.features.course_experience import course_home_page_title, DISABLE_C
 
       })
     })(jQuery)
+
+    // Handle iframe scroll requests from quiz submissions
+    window.addEventListener('message', function(event) {
+      if (event.data && event.data.type === 'quiz.submission.complete' && event.data.action === 'scrollToResult') {
+        // Find the iframe that sent the message
+        var iframe = null;
+        var iframes = document.querySelectorAll('iframe');
+
+        for (var i = 0; i < iframes.length; i++) {
+          try {
+            if (iframes[i].contentWindow === event.source) {
+              iframe = iframes[i];
+              break;
+            }
+          } catch (e) {
+            // Cross-origin iframe, continue checking
+          }
+        }
+
+        if (iframe) {
+          // Look for notification element within the iframe
+          try {
+            var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            var notificationElement = iframeDoc.querySelector('.notification-submit');
+
+            if (notificationElement) {
+              // Calculate position relative to parent window
+              var iframeRect = iframe.getBoundingClientRect();
+              var notificationRect = notificationElement.getBoundingClientRect();
+              var scrollTarget = iframeRect.top + notificationRect.top + window.pageYOffset - (window.innerHeight / 2);
+
+              // Smooth scroll to the notification
+              window.scrollTo({
+                top: scrollTarget,
+                behavior: 'smooth'
+              });
+            }
+          } catch (e) {
+            // Fallback: scroll to iframe bottom
+            var iframeRect = iframe.getBoundingClientRect();
+            var scrollTarget = iframeRect.bottom + window.pageYOffset - 100;
+
+            window.scrollTo({
+              top: scrollTarget,
+              behavior: 'smooth'
+            });
+          }
+        }
+      }
+    });
   </script>
 
 ${HTML(fragment.foot_html())}
