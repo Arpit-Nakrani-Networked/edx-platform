@@ -596,6 +596,10 @@ SWIFT_USERNAME: null
 SWIFT_USE_TEMP_URLS: false
 SYSLOG_SERVER: ''
 SYSTEM_WIDE_ROLE_CLASSES: []
+
+# Session timeout configuration - increased for long loading times
+# Default is typically 300 seconds (5 minutes), increasing to 2 days (172800 seconds)
+SESSION_INACTIVITY_TIMEOUT_IN_SECONDS: 172800
 TECH_SUPPORT_EMAIL: technical@example.com
 THIRD_PARTY_AUTH_BACKENDS:
 - social_core.backends.google.GoogleOAuth2

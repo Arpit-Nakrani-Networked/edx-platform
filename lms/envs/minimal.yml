@@ -39,3 +39,7 @@ API_ACCESS_MANAGER_EMAIL: "api-access@example.com"
 
 # So that you can login to studio on bare-metal
 SOCIAL_AUTH_EDX_OAUTH2_URL_ROOT: 'http://localhost:18000'
+
+# Session timeout configuration - increased for long loading times
+# Default is typically 300 seconds (5 minutes), increasing to 2 days (172800 seconds)
+SESSION_INACTIVITY_TIMEOUT_IN_SECONDS: 172800
