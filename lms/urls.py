@@ -317,6 +317,14 @@ urlpatterns += [
         courseware_views.render_xblock,
         name=RENDER_XBLOCK_NAME,
     ),
+    # xblock Rendering View URL for particular XBlock
+    # URL to provide an HTML view of a particular xBlock specified in the URL.
+    # This is designed for iframe embedding of specific blocks.
+    re_path(
+        fr'^xblock_particular/{settings.USAGE_KEY_PATTERN}$',
+        courseware_views.render_xblock_particular,
+        name='render_xblock_particular',
+    ),
     re_path(
         fr'^videos/embed/{settings.USAGE_KEY_PATTERN}$',
         courseware_views.PublicVideoXBlockEmbedView.as_view(),

@@ -46,6 +46,7 @@ from openedx.core.lib.xblock_services.call_to_action import CallToActionService
 from xmodule.contentstore.django import contentstore
 from xmodule.exceptions import NotFoundError, ProcessingError
 from xmodule.library_tools import LegacyLibraryToolsService
+from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.django import XBlockI18nService, modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
 from xmodule.partitions.partitions_service import PartitionService
@@ -796,7 +797,15 @@ def handle_xblock_callback(request, course_id, usage_id, handler, suffix=None):
     except InvalidKeyError:
         raise Http404(f'{course_id} is not a valid course key')  # lint-amnesty, pylint: disable=raise-missing-from
 
-    with modulestore().bulk_operations(course_key):
+    # Use draft_preferred branch for staff to see unpublished changes
+    staff_access = has_access(request.user, 'staff', course_key)
+    branch_setting = (
+        modulestore().branch_setting(ModuleStoreEnum.Branch.draft_preferred, course_key)
+        if staff_access
+        else modulestore().branch_setting(ModuleStoreEnum.Branch.published_only, course_key)
+    )
+
+    with branch_setting, modulestore().bulk_operations(course_key):
         try:
             course = modulestore().get_course(course_key)
         except ItemNotFoundError:
