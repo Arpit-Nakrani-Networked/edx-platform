@@ -36,9 +36,19 @@ def evaluate_prerequisite(course, subsection_grade, user):
                 if hasattr(subsection_grade, 'percent_graded') else None
 
             for milestone in gated_content:
-                gating_api.update_milestone(
+                prereq_met = gating_api.update_milestone(
                     milestone, subsection_grade.location, prereq_milestone, user, grade_percentage
                 )
+                if prereq_met:
+                    log.info(
+                        "[GATING-COMPLETION] ✓ Prerequisite MET - Unlocked: %s for user %s",
+                        milestone.get('content_id'), user.id
+                    )
+                else:
+                    log.info(
+                        "[GATING-COMPLETION] ✗ Prerequisite NOT MET - Still locked: %s for user %s",
+                        milestone.get('content_id'), user.id
+                    )
 
 
 def evaluate_entrance_exam(course_grade, user):

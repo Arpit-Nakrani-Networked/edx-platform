@@ -258,6 +258,14 @@ def set_required_content(course_key, gated_content_key, prereq_content_key, min_
 
     if prereq_content_key:
         _validate_min_score(min_score)
+
+        # Convert empty strings to '0' for storage
+        # The milestones API will try to convert these to int, so we need valid string representations
+        if min_score == '' or min_score is None:
+            min_score = '0'
+        if min_completion == '' or min_completion is None:
+            min_completion = '0'
+
         requirements = {'min_score': min_score, 'min_completion': min_completion}
         if not milestone:
             milestone = _get_prerequisite_milestone(prereq_content_key)
@@ -411,10 +419,19 @@ def update_milestone(milestone, usage_key, prereq_milestone, user, grade_percent
     if not completion_percentage:
         completion_percentage = get_subsection_completion_percentage(usage_key, user) if min_completion > 0 else 0
 
+    # Log prerequisite evaluation for debugging
+    log.info(
+        '[GATING] Evaluating prerequisite for user %s, subsection %s: '
+        'grade=%.1f%% (required: %.1f%%), completion=%.1f%% (required: %.1f%%)',
+        user.id, usage_key, grade_percentage, min_score, completion_percentage, min_completion
+    )
+
     if grade_percentage >= min_score and completion_percentage >= min_completion:
+        log.info('[GATING] ✓ Prerequisite MET for user %s, subsection %s', user.id, usage_key)
         milestones_helpers.add_user_milestone({'id': user.id}, prereq_milestone)
         return True
     else:
+        log.info('[GATING] ✗ Prerequisite NOT MET for user %s, subsection %s', user.id, usage_key)
         milestones_helpers.remove_user_milestone({'id': user.id}, prereq_milestone)
         return False
 
@@ -501,20 +518,36 @@ def _get_minimum_required_percentage(milestone):
     min_completion = 100
     requirements = milestone.get('requirements')
     if requirements:
+        # Handle min_score: empty string should mean 0 (no requirement), not 100
+        min_score_raw = requirements.get('min_score')
         try:
-            min_score = int(requirements.get('min_score'))
+            # If min_score is empty string, None, or 0, treat as 0 (no score requirement)
+            if min_score_raw == '' or min_score_raw is None:
+                min_score = 0
+            else:
+                min_score = int(min_score_raw)
         except (ValueError, TypeError):
             log.warning(
-                'Gating: Failed to find minimum score for gating milestone %s, defaulting to 100',
+                'Gating: Failed to parse minimum score "%s" for gating milestone %s, defaulting to 100',
+                min_score_raw,
                 json.dumps(milestone)
             )
+            min_score = 100
+
+        # Handle min_completion: empty string or None should default to 0
+        min_completion_raw = requirements.get('min_completion')
         try:
-            min_completion = int(requirements.get('min_completion', 0))
+            if min_completion_raw == '' or min_completion_raw is None:
+                min_completion = 0
+            else:
+                min_completion = int(min_completion_raw)
         except (ValueError, TypeError):
             log.warning(
-                'Gating: Failed to find minimum completion percentage for gating milestone %s, defaulting to 100',
+                'Gating: Failed to parse minimum completion percentage "%s" for gating milestone %s, defaulting to 100',
+                min_completion_raw,
                 json.dumps(milestone)
             )
+            min_completion = 100
     return min_score, min_completion
 
 

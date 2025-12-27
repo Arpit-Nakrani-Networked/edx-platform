@@ -12,6 +12,7 @@ from opaque_keys.edx.keys import CourseKey, UsageKey
 
 from lms.djangoapps.course_blocks.api import get_course_blocks
 from lms.djangoapps.gating import api as gating_api
+from lms.djangoapps.grades.api import SubsectionGradeFactory
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
 
 log = logging.getLogger(__name__)
@@ -42,11 +43,30 @@ def task_evaluate_subsection_completion_milestones(course_id, block_id, user_id)
                 completed_block_usage_key = UsageKey.from_string(block_id).map_into_course(course.id)
                 subsection_block = _get_subsection_of_block(completed_block_usage_key, course_structure)
                 subsection = course_structure[subsection_block]
-                log.debug(
-                    "Gating: Evaluating completion milestone for subsection [%s] and user [%s]",
-                    str(subsection.location), user.id
+                log.info(
+                    "[GATING-COMPLETION] Subsection completed: user=%s, block=%s",
+                    user.id, str(subsection.location)
                 )
-                gating_api.evaluate_prerequisite(course, subsection, user)
+
+                # Check if this subsection is a prerequisite for any other content
+                if gating_api.is_prerequisite(course.id, subsection.location):
+                    log.info(
+                        "[GATING-COMPLETION] Block is a prerequisite, updating milestones"
+                    )
+                    # Get the actual subsection grade object
+                    subsection_grade_factory = SubsectionGradeFactory(user, course_structure=course_structure)
+                    subsection_grade = subsection_grade_factory.create(subsection, read_only=True, force_calculate=True)
+
+                    log.debug(
+                        "Gating: Evaluating completion milestone for subsection [%s] and user [%s]",
+                        str(subsection.location), user.id
+                    )
+                    gating_api.evaluate_prerequisite(course, subsection_grade, user)
+                else:
+                    log.debug(
+                        "[GATING-COMPLETION] Block is not a prerequisite, skipping evaluation: %s",
+                        str(subsection.location)
+                    )
             except KeyError:
                 log.error("Gating: Given prerequisite subsection [%s] not found in course structure", block_id)
 
