@@ -33,7 +33,6 @@ from xblock.core import XBlock
 from xblock.fields import Scope
 
 from cms.djangoapps.contentstore.config.waffle import SHOW_REVIEW_RULES_FLAG
-from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
 from cms.djangoapps.contentstore.toggles import ENABLE_DEFAULT_ADVANCED_PROBLEM_EDITOR_FLAG
 from cms.djangoapps.models.settings.course_grading import CourseGradingModel
 from cms.lib.ai_aside_summary_config import AiAsideSummaryConfig
@@ -537,6 +536,8 @@ def _save_xblock(
                 f"Course: {xblock.location.course_key}"
             )
             try:
+                # Lazy import to avoid circular dependency
+                from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
                 auto_update_prerequisites(xblock.location.course_key)
                 log.info(f"[AUTO-PREREQUISITES-TRIGGER] _save_xblock trigger completed successfully for course: {xblock.location.course_key}")
             except Exception as e:
@@ -828,6 +829,8 @@ def _move_item(source_usage_key, target_parent_usage_key, user, target_index=Non
                         f"To: {target_parent.display_name}, "
                         f"Course: {source_usage_key.course_key}"
                     )
+                    # Lazy import to avoid circular dependency
+                    from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
                     auto_update_prerequisites(source_usage_key.course_key)
                     log.info(f"[AUTO-PREREQUISITES-TRIGGER] _move_item trigger completed successfully for course: {source_usage_key.course_key}")
                 else:
@@ -909,6 +912,8 @@ def _delete_item(usage_key, user):
                         f"Deleted block: {usage_key}, "
                         f"Course: {usage_key.course_key}"
                     )
+                    # Lazy import to avoid circular dependency
+                    from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
                     auto_update_prerequisites(usage_key.course_key)
                     log.info(f"[AUTO-PREREQUISITES-TRIGGER] _delete_item trigger completed successfully for course: {usage_key.course_key}")
                 else:
