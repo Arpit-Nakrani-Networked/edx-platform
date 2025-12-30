@@ -71,7 +71,8 @@
 
                 /** Initializes the module. */
                 initialize: function() {
-                    var state = this.state;
+                    var state = this.state,
+                        speeds = state.speeds;
 
                     if (!this.isPlaybackRatesSupported(state)) {
                         console.log(
@@ -80,10 +81,23 @@
 
                         return false;
                     }
+
+                    // When prevent_skip_video is enabled, only allow speeds <= 1.0
+                    if (state.config.preventSkipVideo) {
+                        speeds = speeds.filter(function(speed) {
+                            return parseFloat(speed) <= 1.0;
+                        });
+
+                        // If there's only one speed option (1.0), hide the control entirely
+                        if (speeds.length <= 1) {
+                            return false;
+                        }
+                    }
+
                     this.el = $(this.template);
                     this.speedsContainer = this.el.find('.video-speeds');
                     this.speedButton = this.el.find('.speed-button');
-                    this.render(state.speeds, state.speed);
+                    this.render(speeds, state.speed);
                     this.setSpeed(state.speed, true, true);
                     this.bindHandlers();
 

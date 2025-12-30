@@ -406,6 +406,7 @@ class VideoStudentViewHandlers:
         view_state.update({
             "saved_video_position": self.saved_video_position.total_seconds(),
             "speed": self.speed,
+            "prevent_skip_video": self.prevent_skip_video,
         })
         return Response(
             json.dumps(view_state),

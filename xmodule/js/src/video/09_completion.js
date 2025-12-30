@@ -44,7 +44,12 @@
                 // timestamp in seconds since the Unix epoch.
                 this.lastSentTime = undefined;
                 this.isComplete = false;
-                this.completionPercentage = this.state.config.completionPercentage;
+                // If prevent_skip_video is enabled, require 100% completion
+                if (this.state.config.preventSkipVideo) {
+                    this.completionPercentage = 1.0;
+                } else {
+                    this.completionPercentage = this.state.config.completionPercentage;
+                }
                 this.startTime = this.state.config.startTime;
                 this.endTime = this.state.config.endTime;
                 this.isEnabled = this.state.config.completionEnabled;

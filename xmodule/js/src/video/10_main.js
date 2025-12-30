@@ -89,7 +89,11 @@
                     storage = VideoStorage('VideoState', id),
                     bumperMetadata = el.data('bumper-metadata'),
                     autoAdvanceEnabled = el.data('autoadvance-enabled') === 'True',
-                    mainVideoModules = [
+                    metadata = el.data('metadata'),
+                    preventSkipVideo = metadata.preventSkipVideo || false,
+                    mainVideoModules = preventSkipVideo ? [
+                        VideoSaveStatePlugin, VideoEventsPlugin, VideoCompletionHandler
+                    ] : [
                         FocusGrabber, VideoControl, VideoPlayPlaceholder,
                         VideoPlayPauseControl, VideoProgressSlider, VideoSpeedControl,
                         VideoVolumeControl, VideoQualityControl, VideoFullScreen, VideoCaption, VideoCommands,

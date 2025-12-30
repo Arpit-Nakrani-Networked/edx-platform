@@ -97,15 +97,52 @@ mind, or whether to act, and in acting, to live."
                 // handle, behaves as a slider named 'video position'.
                 state.videoProgressSlider.handle.attr({
                     role: 'slider',
-                    'aria-disabled': false,
+                    'aria-disabled': state.config.preventSkipVideo,
                     'aria-valuetext': getTimeDescription(state.videoProgressSlider
                         .slider.slider('option', 'value')),
                     'aria-valuemax': state.videoPlayer.duration(),
                     'aria-valuemin': '0',
                     'aria-valuenow': state.videoPlayer.currentTime,
-                    tabindex: '0',
+                    tabindex: state.config.preventSkipVideo ? '-1' : '0',
                     'aria-label': gettext('Video position. Press space to toggle playback')
                 });
+
+                // Block keyboard seeking on the slider handle when prevent_skip_video is enabled
+                if (state.config.preventSkipVideo) {
+                    var blockSliderKeys = function(event) {
+                        // Block ALL seeking keys: Left (37), Right (39), Up (38), Down (40),
+                        // Page Up (33), Page Down (34), Home (36), End (35), Space (32)
+                        if (event.keyCode === 37 || event.keyCode === 39 ||
+                            event.keyCode === 38 || event.keyCode === 40 ||
+                            event.keyCode === 33 || event.keyCode === 34 ||
+                            event.keyCode === 36 || event.keyCode === 35) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            event.stopImmediatePropagation();
+                            console.log('[Slider]: Blocked key code ' + event.keyCode);
+                            return false;
+                        }
+                    };
+
+                    // Completely disable slider interactions
+                    state.videoProgressSlider.el.css('pointer-events', 'none');
+                    state.videoProgressSlider.handle.css('pointer-events', 'none');
+
+                    // Use native addEventListener with capture phase to intercept BEFORE jQuery UI
+                    // This ensures we catch keyboard events before the slider can process them
+                    state.videoProgressSlider.el[0].addEventListener('keydown', blockSliderKeys, true);
+                    state.videoProgressSlider.handle[0].addEventListener('keydown', blockSliderKeys, true);
+
+                    // Also block in bubbling phase as backup
+                    state.videoProgressSlider.el.on('keydown', blockSliderKeys);
+                    state.videoProgressSlider.handle.on('keydown', blockSliderKeys);
+
+                    // Block keyup and keypress too
+                    state.videoProgressSlider.el[0].addEventListener('keyup', blockSliderKeys, true);
+                    state.videoProgressSlider.handle[0].addEventListener('keyup', blockSliderKeys, true);
+                    state.videoProgressSlider.el[0].addEventListener('keypress', blockSliderKeys, true);
+                    state.videoProgressSlider.handle[0].addEventListener('keypress', blockSliderKeys, true);
+                }
             }
 
             // ***************************************************************
@@ -130,7 +167,9 @@ mind, or whether to act, and in acting, to live."
                         max: this.config.endTime,
                         slide: this.videoProgressSlider.onSlide,
                         stop: this.videoProgressSlider.onStop,
-                        step: 5
+                        step: 5,
+                        // Disable slider if prevent_skip_video is enabled
+                        disabled: this.config.preventSkipVideo
                     });
 
                 this.videoProgressSlider.sliderProgress = this.videoProgressSlider
@@ -197,10 +236,20 @@ mind, or whether to act, and in acting, to live."
 
             function onSlide(event, ui) {
                 var time = ui.value,
-                    endTime = this.videoPlayer.duration();
+                    endTime = this.videoPlayer.duration(),
+                    currentTime = this.videoPlayer.currentTime;
 
                 if (this.config.endTime) {
                     endTime = Math.min(this.config.endTime, endTime);
+                }
+
+                // Prevent ALL seeking if video skipping is disabled
+                if (this.config.preventSkipVideo) {
+                    // Reset slider to current position - prevent both forward AND backward seeking
+                    this.videoProgressSlider.slider.slider('option', 'value', currentTime);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return false;
                 }
 
                 this.videoProgressSlider.frozen = true;
@@ -229,7 +278,16 @@ mind, or whether to act, and in acting, to live."
             }
 
             function onStop(event, ui) {
-                var _this = this;
+                var _this = this,
+                    currentTime = this.videoPlayer.currentTime;
+
+                // Prevent ALL seeking if video skipping is disabled
+                if (this.config.preventSkipVideo) {
+                    // Reset slider to current position - prevent both forward AND backward seeking
+                    this.videoProgressSlider.slider.slider('option', 'value', currentTime);
+                    this.videoProgressSlider.frozen = false;
+                    return false;
+                }
 
                 this.videoProgressSlider.frozen = true;
 

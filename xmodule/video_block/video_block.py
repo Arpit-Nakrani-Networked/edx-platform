@@ -421,15 +421,17 @@ class VideoBlock(
             # this option will have an effect if changed to "True". The code on
             # front-end exists.
             'autohideHtml5': False,
-            'autoplay': settings.FEATURES.get('AUTOPLAY_VIDEOS', False),
+            # Auto-play video when prevent_skip_video is enabled, otherwise use system setting
+            'autoplay': self.prevent_skip_video or settings.FEATURES.get('AUTOPLAY_VIDEOS', False),
             # This won't work when we move to data that
             # isn't on the filesystem
             'captionDataDir': getattr(self, 'data_dir', None),
             'completionEnabled': completion_enabled,
-            'completionPercentage': 0.01,
+            'completionPercentage': 0.95 if self.prevent_skip_video else 0.01,
             'duration': video_duration,
             'end': self.end_time.total_seconds(),  # pylint: disable=no-member
             'generalSpeed': self.global_speed,
+            'preventSkipVideo': self.prevent_skip_video,
             'lmsRootURL': settings.LMS_ROOT_URL,
             'poster': poster,
             'prioritizeHls': self.prioritize_hls(self.youtube_streams, sources),
@@ -476,6 +478,7 @@ class VideoBlock(
             'bumper_metadata': json.dumps(self.bumper['metadata']),  # pylint: disable=E1101
             'cdn_eval': cdn_eval,
             'cdn_exp_group': cdn_exp_group,
+            'prevent_skip_video': self.prevent_skip_video,
             'display_name': self.display_name_with_default,
             'download_video_link': download_video_link,
             'handout': self.handout,
@@ -1248,6 +1251,7 @@ class VideoBlock(
             "transcripts": transcripts,
             "encoded_videos": encoded_videos,
             "all_sources": all_sources,
+            "prevent_skip_video": self.prevent_skip_video,
         }
 
     def _poster(self):
