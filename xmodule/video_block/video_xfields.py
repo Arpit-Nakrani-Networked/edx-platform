@@ -220,3 +220,15 @@ class VideoFields:
         scope=Scope.settings,
         default="",
     )
+    prevent_skip_video = Boolean(
+        help=_(
+            "When enabled, learners must watch the entire video and cannot skip ahead. "
+            "This disables ALL video controls including play/pause buttons, progress bar, speed controls, "
+            "volume, and fullscreen. The video will auto-play and learners must watch it completely "
+            "from start to finish. Keyboard shortcuts for seeking (arrow keys) will be blocked. "
+            "Captions remain available for accessibility."
+        ),
+        display_name=_("Prevent Video Skipping"),
+        scope=Scope.settings,
+        default=False
+    )

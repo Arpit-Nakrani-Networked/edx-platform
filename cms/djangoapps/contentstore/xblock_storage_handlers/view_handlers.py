@@ -1352,6 +1352,13 @@ def create_xblock_info(  # lint-amnesty, pylint: disable=too-many-statements
             # inherited metadata, all children will have it.
             if getattr(xblock, "in_entrance_exam", False):
                 xblock_info["is_header_visible"] = False
+        elif xblock.category == "video":
+            # Add video-specific fields
+            xblock_info.update(
+                {
+                    "prevent_skip_video": getattr(xblock, "prevent_skip_video", False),
+                }
+            )
 
         if data is not None:
             xblock_info["data"] = data

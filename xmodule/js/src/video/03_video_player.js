@@ -143,6 +143,16 @@
                     cc_load_policy: 0
                 };
 
+                // When prevent_skip_video is enabled, completely lock down YouTube player
+                if (state.config.preventSkipVideo) {
+                    state.videoPlayer.playerVars.controls = 0;      // Force no controls
+                    state.videoPlayer.playerVars.disablekb = 1;     // Disable keyboard
+                    state.videoPlayer.playerVars.fs = 0;            // Disable fullscreen
+                    state.videoPlayer.playerVars.iv_load_policy = 3; // Disable annotations
+                    state.videoPlayer.playerVars.modestbranding = 1; // Minimal branding
+                    state.videoPlayer.playerVars.playsinline = 1;   // Force inline playback
+                }
+
                 if (!state.isFlashMode()) {
                     state.videoPlayer.playerVars.html5 = 1;
                 }
@@ -194,6 +204,28 @@
                     // eslint-disable-next-line no-multi-assign
                     player = state.videoEl = state.videoPlayer.player.videoEl;
                     player[0].addEventListener(eventToBeTriggered, state.videoPlayer.onLoadMetadataHtml5, false);
+
+                    // Prevent keyboard seeking when prevent_skip_video is enabled
+                    if (state.config.preventSkipVideo) {
+                        // Remove tabindex from video element to prevent direct keyboard focus
+                        player.attr('tabindex', '-1');
+
+                        // Prevent keyboard events on video element
+                        player[0].addEventListener('keydown', function(event) {
+                            // Block ALL seeking keys: Left (37), Right (39), Up (38), Down (40),
+                            // Page Up (33), Page Down (34), Home (36), End (35)
+                            if (event.keyCode === 37 || event.keyCode === 39 ||
+                                event.keyCode === 38 || event.keyCode === 40 ||
+                                event.keyCode === 33 || event.keyCode === 34 ||
+                                event.keyCode === 36 || event.keyCode === 35) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                event.stopImmediatePropagation();
+                                return false;
+                            }
+                        }, true); // Use capture phase
+                    }
+
                     player.on('remove', state.videoPlayer.destroy);
                 } else {
                     youTubeId = state.youtubeId();
@@ -209,6 +241,24 @@
                         }
                     });
 
+                    // For prevent_skip_video, add CSS to completely hide YouTube controls
+                    if (state.config.preventSkipVideo) {
+                        state.el.on('initialize', function() {
+                            var iframe = state.el.find('iframe');
+                            iframe.css({
+                                'pointer-events': 'none',
+                                'user-select': 'none',
+                                '-webkit-user-select': 'none',
+                                '-moz-user-select': 'none',
+                                '-ms-user-select': 'none'
+                            });
+                            // Add a style tag to hide YouTube's UI elements
+                            var style = document.createElement('style');
+                            // style.textContent = '.video-controls-disabled iframe { pointer-events: none !important; }';
+                            document.head.appendChild(style);
+                        });
+                    }
+
                     state.el.on('initialize', function() {
                         // eslint-disable-next-line no-shadow, no-multi-assign
                         var player = state.videoEl = state.el.find('iframe'),
@@ -219,6 +269,42 @@
 
                         _resize(state, videoWidth, videoHeight);
                         _updateVcrAndRegion(state, true);
+                    });
+                }
+
+                // Add global keyboard event prevention for the video container
+                if (state.config.preventSkipVideo) {
+                    // Prevent keyboard seeking at multiple levels
+                    var preventAllSeekKeys = function(event) {
+                        // Block ALL seeking keys: Left (37), Right (39), Up (38), Down (40),
+                        // Page Up (33), Page Down (34), Home (36), End (35)
+                        if (event.keyCode === 37 || event.keyCode === 39 ||
+                            event.keyCode === 38 || event.keyCode === 40 ||
+                            event.keyCode === 33 || event.keyCode === 34 ||
+                            event.keyCode === 36 || event.keyCode === 35) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            event.stopImmediatePropagation();
+                            console.log('[Video]: Keyboard seeking blocked (key code: ' + event.keyCode + ')');
+                            return false;
+                        }
+                    };
+
+                    // Attach to video container
+                    state.el.on('keydown', preventAllSeekKeys);
+
+                    // Also attach to document when video has focus
+                    state.el.on('focus focusin', function() {
+                        $(document).on('keydown.preventVideoSkip', preventAllSeekKeys);
+                    });
+
+                    state.el.on('blur focusout', function() {
+                        $(document).off('keydown.preventVideoSkip');
+                    });
+
+                    // Cleanup on destroy
+                    state.el.on('destroy', function() {
+                        $(document).off('keydown.preventVideoSkip');
                     });
                 }
 
@@ -394,6 +480,26 @@
                 this.videoPlayer.currentTime = time || this.videoPlayer.player.getCurrentTime();
 
                 if (isFinite(this.videoPlayer.currentTime)) {
+                    // Track maximum watched position to prevent forward seeking
+                    if (this.config.preventSkipVideo) {
+                        if (!this.videoPlayer.maxWatchedTime) {
+                            this.videoPlayer.maxWatchedTime = this.videoPlayer.currentTime;
+                        }
+
+                        // If current time jumped forward beyond max watched, revert it
+                        if (this.videoPlayer.currentTime > this.videoPlayer.maxWatchedTime + 1) {
+                            console.log('[Video]: Detected forward seek attempt, reverting from',
+                                this.videoPlayer.currentTime, 'to', this.videoPlayer.maxWatchedTime);
+                            this.videoPlayer.seekTo(this.videoPlayer.maxWatchedTime);
+                            return;
+                        }
+
+                        // Update max watched time
+                        if (this.videoPlayer.currentTime > this.videoPlayer.maxWatchedTime) {
+                            this.videoPlayer.maxWatchedTime = this.videoPlayer.currentTime;
+                        }
+                    }
+
                     this.videoPlayer.updatePlayTime(this.videoPlayer.currentTime);
 
                     // We need to pause the video if current time is smaller (or equal)
@@ -447,6 +553,12 @@
                 var time = params.time,
                     type = params.type,
                     oldTime = this.videoPlayer.currentTime;
+
+                // Prevent ALL seeking if video skipping is disabled
+                if (this.config.preventSkipVideo && time !== oldTime) {
+                    return false;
+                }
+
                 // After the user seeks, the video will start playing from
                 // the sought point, and stop playing at the end.
                 this.videoPlayer.goToStartTime = false;
@@ -461,6 +573,12 @@
                 var duration = this.videoPlayer.duration();
 
                 if ((typeof time !== 'number') || (time > duration) || (time < 0)) {
+                    return false;
+                }
+
+                // Additional safety: Prevent ALL seeking if prevent_skip_video is enabled
+                if (this.config.preventSkipVideo && time !== this.videoPlayer.currentTime) {
+                    console.log('[Video]: Seeking prevented by preventSkipVideo setting');
                     return false;
                 }
 
@@ -673,6 +791,11 @@
 
                 if (time > 0 && this.videoPlayer.goToStartTime) {
                     this.videoPlayer.seekTo(time);
+                }
+
+                // Initialize max watched time for prevent_skip_video
+                if (this.config.preventSkipVideo) {
+                    this.videoPlayer.maxWatchedTime = time;
                 }
 
                 this.el.trigger('ready', arguments);
