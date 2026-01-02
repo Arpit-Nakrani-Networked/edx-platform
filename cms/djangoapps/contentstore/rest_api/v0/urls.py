@@ -14,7 +14,8 @@ from .views import (
     TranscriptView,
     YoutubeTranscriptCheckView,
     YoutubeTranscriptUploadView,
-    APIHeartBeatView
+    APIHeartBeatView,
+    AutoPrerequisitesView
 )
 from .views import assets
 from .views import authoring_videos
@@ -101,5 +102,9 @@ urlpatterns = [
     re_path(
         fr'^youtube_transcripts/{settings.COURSE_ID_PATTERN}/upload?$',
         YoutubeTranscriptUploadView.as_view(), name='cms_api_youtube_transcripts_upload'
+    ),
+    re_path(
+        fr'^prerequisites/{settings.COURSE_ID_PATTERN}/auto$',
+        AutoPrerequisitesView.as_view(), name='cms_api_auto_prerequisites'
     ),
 ]

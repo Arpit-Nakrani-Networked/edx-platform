@@ -33,6 +33,7 @@ from xblock.core import XBlock
 from xblock.fields import Scope
 
 from cms.djangoapps.contentstore.config.waffle import SHOW_REVIEW_RULES_FLAG
+from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
 from cms.djangoapps.contentstore.toggles import ENABLE_DEFAULT_ADVANCED_PROBLEM_EDITOR_FLAG
 from cms.djangoapps.models.settings.course_grading import CourseGradingModel
 from cms.lib.ai_aside_summary_config import AiAsideSummaryConfig
@@ -514,6 +515,39 @@ def _save_xblock(
             AiAsideSummaryConfig(course.id).set_summary_settings(xblock.location, {
                 'enabled': summary_configuration_enabled
             })
+        # Auto-update prerequisites if subsection gating is enabled and we're working with subsections
+        # or reordering children (which may affect subsection order)
+        gating_enabled = getattr(course, 'enable_subsection_gating', False)
+        trigger_condition = xblock.category == "sequential" or children_strings is not None
+
+        # Always log this at INFO level so you can see it regardless of DEBUG setting
+        log.info(
+            f"[AUTO-PREREQUISITES-TRIGGER] _save_xblock called - "
+            f"category: {xblock.category}, "
+            f"gating_enabled: {gating_enabled}, "
+            f"children_updated: {children_strings is not None}, "
+            f"will_trigger: {gating_enabled and trigger_condition}"
+        )
+
+        if gating_enabled and trigger_condition:
+            log.info(
+                f"[AUTO-PREREQUISITES-TRIGGER] Triggering auto-update from _save_xblock - "
+                f"Reason: {'Subsection updated' if xblock.category == 'sequential' else 'Children reordered'}, "
+                f"XBlock: {xblock.location}, "
+                f"Course: {xblock.location.course_key}"
+            )
+            try:
+                auto_update_prerequisites(xblock.location.course_key)
+                log.info(f"[AUTO-PREREQUISITES-TRIGGER] _save_xblock trigger completed successfully for course: {xblock.location.course_key}")
+            except Exception as e:
+                log.error(
+                    f"[AUTO-PREREQUISITES-TRIGGER] _save_xblock trigger failed for course {xblock.location.course_key}: {str(e)}",
+                    exc_info=True
+                )
+        elif not gating_enabled:
+            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _save_xblock - subsection gating disabled for course: {xblock.location.course_key}")
+        else:
+            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _save_xblock - trigger condition not met (category: {xblock.category}, children_updated: {children_strings is not None})")
 
         # Note that children aren't being returned until we have a use case.
         return JsonResponse(result, encoder=EdxJSONEncoder)
@@ -758,6 +792,54 @@ def _move_item(source_usage_key, target_parent_usage_key, user, target_index=Non
             insert_at,
         )
 
+        # Always log move operations at INFO level
+        log.info(
+            f"[AUTO-PREREQUISITES-TRIGGER] _move_item called - "
+            f"type: {source_type}, "
+            f"source: {source_usage_key}, "
+            f"to_index: {insert_at}"
+        )
+
+        # Auto-update prerequisites if a subsection was moved and subsection gating is enabled
+        if source_type == "sequential":
+            log.info(
+                f"[AUTO-PREREQUISITES-TRIGGER] Subsection moved, checking if auto-update is needed - "
+                f"from_parent: {source_parent.location}, "
+                f"to_parent: {target_parent_usage_key}"
+            )
+            try:
+                course = store.get_course(source_usage_key.course_key)
+                gating_enabled = course and getattr(course, 'enable_subsection_gating', False)
+
+                log.debug(
+                    f"[AUTO-PREREQUISITES-TRIGGER] _move_item check - "
+                    f"course_found: {course is not None}, "
+                    f"gating_enabled: {gating_enabled}, "
+                    f"moved_block: {source_usage_key}, "
+                    f"block_type: {source_type}"
+                )
+
+                if course and gating_enabled:
+                    log.info(
+                        f"[AUTO-PREREQUISITES-TRIGGER] Triggering auto-update from _move_item - "
+                        f"Reason: Subsection moved/reordered, "
+                        f"Moved block: {source_usage_key}, "
+                        f"From: {source_parent.display_name}, "
+                        f"To: {target_parent.display_name}, "
+                        f"Course: {source_usage_key.course_key}"
+                    )
+                    auto_update_prerequisites(source_usage_key.course_key)
+                    log.info(f"[AUTO-PREREQUISITES-TRIGGER] _move_item trigger completed successfully for course: {source_usage_key.course_key}")
+                else:
+                    log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _move_item - subsection gating disabled or course not found for: {source_usage_key.course_key}")
+            except Exception as e:
+                log.error(
+                    f"[AUTO-PREREQUISITES-TRIGGER] _move_item trigger failed after moving subsection {source_usage_key}: {str(e)}",
+                    exc_info=True
+                )
+        else:
+            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _move_item - moved block is not a subsection (type: {source_type})")
+
         context = {
             "move_source_locator": str(source_usage_key),
             "parent_locator": str(target_parent_usage_key),
@@ -797,7 +879,47 @@ def _delete_item(usage_key, user):
 
         # Delete user bookmarks
         bookmarks_api.delete_bookmarks(usage_key)
+
+        # Store the block type before deletion for later use
+        block_type = usage_key.block_type
+
+        # Always log deletions at INFO level
+        log.info(f"[AUTO-PREREQUISITES-TRIGGER] _delete_item called - type: {block_type}, location: {usage_key}")
         store.delete_item(usage_key, user.id)
+        log.info(f"[AUTO-PREREQUISITES-TRIGGER] Block deleted successfully - type: {block_type}")
+
+        # Auto-update prerequisites if a subsection was deleted and subsection gating is enabled
+        if block_type == "sequential":
+            log.info(f"[AUTO-PREREQUISITES-TRIGGER] Subsection deleted, checking if auto-update is needed - location: {usage_key}")
+            try:
+                course = store.get_course(usage_key.course_key)
+                gating_enabled = course and getattr(course, 'enable_subsection_gating', False)
+
+                log.debug(
+                    f"[AUTO-PREREQUISITES-TRIGGER] _delete_item check - "
+                    f"course_found: {course is not None}, "
+                    f"gating_enabled: {gating_enabled}, "
+                    f"deleted_block: {usage_key}"
+                )
+
+                if course and gating_enabled:
+                    log.info(
+                        f"[AUTO-PREREQUISITES-TRIGGER] Triggering auto-update from _delete_item - "
+                        f"Reason: Subsection deleted, "
+                        f"Deleted block: {usage_key}, "
+                        f"Course: {usage_key.course_key}"
+                    )
+                    auto_update_prerequisites(usage_key.course_key)
+                    log.info(f"[AUTO-PREREQUISITES-TRIGGER] _delete_item trigger completed successfully for course: {usage_key.course_key}")
+                else:
+                    log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _delete_item - subsection gating disabled or course not found for: {usage_key.course_key}")
+            except Exception as e:
+                log.error(
+                    f"[AUTO-PREREQUISITES-TRIGGER] _delete_item trigger failed after deleting subsection {usage_key}: {str(e)}",
+                    exc_info=True
+                )
+        else:
+            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _delete_item - deleted block is not a subsection (type: {block_type})")
 
 
 def delete_orphans(course_usage_key, user_id, commit=False):
