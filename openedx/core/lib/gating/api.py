@@ -27,6 +27,412 @@ log = logging.getLogger(__name__)
 GATING_NAMESPACE_QUALIFIER = '.gating'
 
 
+def _subsection_has_prevent_skip_video(subsection_usage_key, user):
+    """
+    Check if a subsection contains a video with prevent_skip_video=True
+
+    Arguments:
+        subsection_usage_key: UsageKey of the subsection
+        user: The user object
+
+    Returns:
+        tuple: (has_prevent_skip_video, video_usage_key) - True if subsection has prevent_skip video, and the video key
+    """
+    try:
+        store = modulestore()
+        subsection = store.get_item(subsection_usage_key)
+        log.info("[VIDEO-GATING] Checking subsection %s for prevent_skip videos", subsection_usage_key)
+
+        # Recursively check all descendants for video blocks with prevent_skip_video=True
+        def check_descendants(block, depth=0):
+            # Skip None blocks
+            if block is None:
+                return False, None
+
+            indent = "  " * depth
+            block_category = getattr(block, 'category', None)
+            block_location = getattr(block, 'location', 'unknown')
+
+            log.debug("[VIDEO-GATING] %sChecking block %s, category=%s", indent, block_location, block_category)
+
+            # Check if this block is a video with prevent_skip_video enabled
+            if block_category == 'video':
+                prevent_skip = getattr(block, 'prevent_skip_video', False)
+                log.info("[VIDEO-GATING] %sFound video block %s, prevent_skip_video=%s",
+                         indent, block_location, prevent_skip)
+                if prevent_skip:
+                    log.info("[VIDEO-GATING] ✓ Found prevent_skip video in subsection %s: %s",
+                             subsection_usage_key, block_location)
+                    return True, block_location
+
+            # Recursively check children
+            if hasattr(block, 'get_children'):
+                try:
+                    children = block.get_children()
+                    for child in children:
+                        if child is not None:  # Skip None children
+                            has_video, video_key = check_descendants(child, depth + 1)
+                            if has_video:
+                                return True, video_key
+                except Exception as e:
+                    log.warning("[VIDEO-GATING] Error getting children for block %s: %s", block_location, e)
+
+            return False, None
+
+        result = check_descendants(subsection)
+        if not result[0]:
+            log.info("[VIDEO-GATING] No prevent_skip video found in subsection %s", subsection_usage_key)
+        return result
+    except Exception as e:
+        log.error("Error checking for prevent_skip_video in subsection %s: %s", subsection_usage_key, e, exc_info=True)
+        return False, None
+
+
+def _get_previous_subsections_in_section(subsection_usage_key):
+    """
+    Get all subsections that come before the given subsection in the same section/chapter
+
+    Arguments:
+        subsection_usage_key: UsageKey of the current subsection
+
+    Returns:
+        list: List of (subsection_usage_key, index) tuples for previous subsections
+    """
+    try:
+        store = modulestore()
+        subsection = store.get_item(subsection_usage_key)
+
+        # Get the parent section (chapter)
+        section = subsection.get_parent()
+        if not section:
+            log.warning("[VIDEO-GATING] No parent section found for subsection %s", subsection_usage_key)
+            return []
+
+        # Get all children (subsections) of the section
+        all_subsections = section.get_children()
+        log.info("[VIDEO-GATING] Found %d subsections in section %s", len(all_subsections), section.location)
+
+        # Find the index of the current subsection
+        current_index = None
+        for idx, child in enumerate(all_subsections):
+            # Compare as strings to handle different UsageKey types
+            if str(child.location) == str(subsection_usage_key):
+                current_index = idx
+                break
+
+        if current_index is None:
+            log.warning("[VIDEO-GATING] Could not find subsection %s in parent section", subsection_usage_key)
+            return []
+
+        log.info("[VIDEO-GATING] Subsection %s is at index %d, checking %d previous subsections",
+                 subsection_usage_key, current_index, current_index)
+
+        # Return all subsections before the current one
+        previous_subsections = []
+        for idx in range(current_index):
+            previous_subsections.append((all_subsections[idx].location, idx))
+
+        return previous_subsections
+    except Exception as e:
+        log.error("Error getting previous subsections for %s: %s", subsection_usage_key, e, exc_info=True)
+        return []
+
+
+def _is_video_completed(video_usage_key, user):
+    """
+    Check if user has completed watching a prevent_skip video
+
+    Arguments:
+        video_usage_key: UsageKey of the video
+        user: The user object
+
+    Returns:
+        bool: True if the video is completed, False otherwise
+    """
+    try:
+        course_key = video_usage_key.course_key
+        course_block_completions = BlockCompletion.get_learning_context_completions(user, course_key)
+
+        # Check if the video is marked as complete
+        completion = course_block_completions.get(video_usage_key, 0)
+        return completion >= 1.0
+    except Exception as e:
+        log.warning("Error checking video completion for %s, user %s: %s", video_usage_key, user.id, e)
+        return False
+
+
+def _has_video_based_prerequisite_requirement(content_id):
+    """
+    Check if a subsection might have video-based prerequisite requirements.
+    Returns True if there are ANY prevent_skip videos in the course (checkpoint system is active).
+
+    Arguments:
+        content_id: UsageKey of the content being checked
+
+    Returns:
+        bool: True if checkpoint system is active (any prevent_skip videos exist in course)
+    """
+    try:
+        course_key = content_id.course_key
+        all_subsections = _get_all_subsections_in_course(course_key)
+
+        # Check if ANY subsection in the course has a prevent_skip video
+        for subsection_key, section_idx, subsection_idx in all_subsections:
+            has_prevent_skip, _ = _subsection_has_prevent_skip_video(subsection_key, None)
+            if has_prevent_skip:
+                log.info("[VIDEO-GATING] Found prevent_skip video in course - checkpoint system is active")
+                return True
+
+        log.info("[VIDEO-GATING] No prevent_skip videos found in course - checkpoint system inactive")
+        return False
+    except Exception as e:
+        log.warning("Error checking for video-based prerequisite requirement for %s: %s", content_id, e)
+        return False
+
+
+def _get_all_subsections_in_course(course_key):
+    """
+    Get ALL subsections in the entire course in sequential order.
+    Always fetches fresh data from modulestore to handle content changes.
+
+    Arguments:
+        course_key: The course key
+
+    Returns:
+        list: List of (subsection_usage_key, section_index, subsection_index) tuples
+    """
+    try:
+        # Always get fresh data from modulestore (no caching)
+        store = modulestore()
+        course = store.get_course(course_key)
+
+        if not course:
+            log.warning("[VIDEO-GATING] Could not find course %s", course_key)
+            return []
+
+        all_subsections = []
+
+        # Get sections - handle None values
+        try:
+            sections = course.get_children()
+        except Exception as e:
+            log.error("[VIDEO-GATING] Error getting sections for course %s: %s", course_key, e)
+            return []
+
+        if not sections:
+            log.info("[VIDEO-GATING] No sections found in course %s", course_key)
+            return []
+
+        for section_idx, section in enumerate(sections):
+            # Skip None or deleted sections
+            if section is None:
+                log.warning("[VIDEO-GATING] Encountered None section at index %d", section_idx)
+                continue
+
+            try:
+                subsections = section.get_children()
+            except Exception as e:
+                log.error("[VIDEO-GATING] Error getting subsections for section %s: %s",
+                         getattr(section, 'location', 'unknown'), e)
+                continue
+
+            if not subsections:
+                continue
+
+            for subsection_idx, subsection in enumerate(subsections):
+                # Skip None or deleted subsections
+                if subsection is None:
+                    log.warning("[VIDEO-GATING] Encountered None subsection at section %d, index %d",
+                               section_idx, subsection_idx)
+                    continue
+
+                # Verify subsection has a valid location
+                if not hasattr(subsection, 'location'):
+                    log.warning("[VIDEO-GATING] Subsection at [%d.%d] has no location",
+                               section_idx, subsection_idx)
+                    continue
+
+                all_subsections.append((subsection.location, section_idx, subsection_idx))
+
+        log.info("[VIDEO-GATING] Found %d total subsections in course %s", len(all_subsections), course_key)
+        return all_subsections
+
+    except Exception as e:
+        log.error("[VIDEO-GATING] Error getting all subsections for course %s: %s",
+                 course_key, e, exc_info=True)
+        return []
+
+
+def _find_first_incomplete_video_checkpoint(course_key, user):
+    """
+    Find the first subsection in the course that contains an incomplete prevent_skip video.
+    This subsection becomes the checkpoint - all subsections after it are locked.
+    Handles deleted/missing content gracefully.
+
+    Arguments:
+        course_key: The course key
+        user: The user object
+
+    Returns:
+        tuple: (checkpoint_subsection_key, video_key) or (None, None) if no checkpoint exists
+    """
+    try:
+        log.info("[VIDEO-GATING] Scanning course %s for first incomplete video checkpoint for user %s",
+                 course_key, user.id)
+
+        # Get fresh list of all subsections
+        all_subsections = _get_all_subsections_in_course(course_key)
+
+        if not all_subsections:
+            log.info("[VIDEO-GATING] No subsections found in course")
+            return None, None
+
+        for subsection_key, section_idx, subsection_idx in all_subsections:
+            try:
+                log.info("[VIDEO-GATING] Checking subsection [%d.%d]: %s",
+                         section_idx, subsection_idx, subsection_key)
+
+                # Check if this subsection still exists and has a prevent_skip video
+                has_prevent_skip, video_key = _subsection_has_prevent_skip_video(subsection_key, user)
+
+                if has_prevent_skip:
+                    # Verify video still exists before checking completion
+                    if video_key is None:
+                        log.warning("[VIDEO-GATING] Subsection %s has prevent_skip flag but video_key is None",
+                                   subsection_key)
+                        continue
+
+                    # Check if this video is completed
+                    video_completed = _is_video_completed(video_key, user)
+                    log.info("[VIDEO-GATING] Found prevent_skip video %s, completed=%s",
+                             video_key, video_completed)
+
+                    if not video_completed:
+                        # This is our checkpoint - first incomplete prevent_skip video
+                        log.info("[VIDEO-GATING] ✓ Found checkpoint at subsection %s (video: %s)",
+                                 subsection_key, video_key)
+                        return subsection_key, video_key
+                    else:
+                        log.info("[VIDEO-GATING] Video %s is complete, continuing scan...", video_key)
+
+            except Exception as e:
+                log.error("[VIDEO-GATING] Error checking subsection [%d.%d] %s: %s",
+                         section_idx, subsection_idx, subsection_key, e)
+                # Continue to next subsection even if this one errors
+                continue
+
+        # No incomplete checkpoints found
+        log.info("[VIDEO-GATING] No incomplete video checkpoints found - all unlocked")
+        return None, None
+
+    except Exception as e:
+        log.error("[VIDEO-GATING] Error finding video checkpoint for course %s, user %s: %s",
+                  course_key, user.id, e, exc_info=True)
+        return None, None
+
+
+def _check_video_based_prerequisites(content_id, user_id):
+    """
+    Check video-based prerequisites when enable_subsection_gating is False.
+
+    Progressive checkpoint system:
+    - Scan all subsections in course order (always fresh data)
+    - Find the FIRST subsection with an incomplete prevent_skip video (the "checkpoint")
+    - Lock ALL subsections that come after this checkpoint
+    - Once checkpoint video is completed, scan forward to find the next checkpoint
+    - Handles content deletion/reordering gracefully
+
+    Arguments:
+        content_id: UsageKey of the subsection being checked
+        user_id: The user ID
+
+    Returns:
+        tuple: (prereq_met, prereq_meta_info) - Same format as compute_is_prereq_met
+    """
+    try:
+        log.info("[VIDEO-GATING] Starting video-based prerequisite check for subsection %s, user %s",
+                 content_id, user_id)
+        user = User.objects.get(id=user_id)
+        store = modulestore()
+        course_key = content_id.course_key
+
+        # Find the first incomplete video checkpoint in the course (always fresh scan)
+        checkpoint_subsection_key, checkpoint_video_key = _find_first_incomplete_video_checkpoint(course_key, user)
+
+        if checkpoint_subsection_key is None:
+            # No checkpoints exist - all subsections are unlocked
+            log.info("[VIDEO-GATING] ✓ No active checkpoint - subsection %s is unlocked", content_id)
+            return True, {'url': None, 'display_name': None}
+
+        # Get fresh list of all subsections to determine positions
+        all_subsections = _get_all_subsections_in_course(course_key)
+
+        if not all_subsections:
+            log.warning("[VIDEO-GATING] No subsections found in course")
+            return True, {'url': None, 'display_name': None}
+
+        current_position = None
+        checkpoint_position = None
+
+        # Find positions of current subsection and checkpoint
+        for idx, (subsection_key, section_idx, subsection_idx) in enumerate(all_subsections):
+            if str(subsection_key) == str(content_id):
+                current_position = idx
+                log.info("[VIDEO-GATING] Found current subsection at position %d [%d.%d]",
+                        idx, section_idx, subsection_idx)
+            if str(subsection_key) == str(checkpoint_subsection_key):
+                checkpoint_position = idx
+                log.info("[VIDEO-GATING] Found checkpoint subsection at position %d [%d.%d]",
+                        idx, section_idx, subsection_idx)
+
+        # Handle case where current subsection was deleted/not found
+        if current_position is None:
+            log.warning("[VIDEO-GATING] Current subsection %s not found in course (may have been deleted)",
+                       content_id)
+            # Don't block access if we can't find the subsection
+            return True, {'url': None, 'display_name': None}
+
+        # Handle case where checkpoint subsection was deleted
+        if checkpoint_position is None:
+            log.warning("[VIDEO-GATING] Checkpoint subsection %s not found in course (may have been deleted)",
+                       checkpoint_subsection_key)
+            # Re-scan to find a new checkpoint
+            log.info("[VIDEO-GATING] Re-scanning for new checkpoint...")
+            return _check_video_based_prerequisites(content_id, user_id)
+
+        log.info("[VIDEO-GATING] Positions - Current: %d, Checkpoint: %d", current_position, checkpoint_position)
+
+        if current_position <= checkpoint_position:
+            # Current subsection is AT or BEFORE the checkpoint - it's unlocked
+            log.info("[VIDEO-GATING] ✓ Subsection %s is at/before checkpoint - unlocked", content_id)
+            return True, {'url': None, 'display_name': None}
+        else:
+            # Current subsection is AFTER the checkpoint - it's LOCKED
+            try:
+                checkpoint_subsection = store.get_item(checkpoint_subsection_key)
+                prereq_meta_info = {
+                    'url': reverse('jump_to', kwargs={'course_id': course_key, 'location': checkpoint_subsection_key}),
+                    'display_name': getattr(checkpoint_subsection, 'display_name', 'Required Content'),
+                    'id': str(checkpoint_subsection_key)
+                }
+                log.info(
+                    "[VIDEO-GATING] ✗ Subsection %s LOCKED - must complete video checkpoint in subsection %s",
+                    content_id, checkpoint_subsection_key
+                )
+                return False, prereq_meta_info
+            except Exception as e:
+                log.error("[VIDEO-GATING] Error getting checkpoint subsection %s: %s",
+                         checkpoint_subsection_key, e)
+                # If we can't load the checkpoint, don't block access
+                return True, {'url': None, 'display_name': None}
+
+    except Exception as e:
+        log.error("[VIDEO-GATING] Error checking video-based prerequisites for %s, user %s: %s",
+                 content_id, user_id, e, exc_info=True)
+        # On error, don't block access (fail open for safety)
+        return True, {'url': None, 'display_name': None}
+
+
 def _get_prerequisite_milestone(prereq_content_key):
     """
     Get gating milestone associated with the given content usage key.
@@ -131,6 +537,37 @@ def get_gating_milestone(course_key, content_key, relationship):
     Returns:
         dict or None: The gating milestone dict or None
     """
+    # Check if subsection gating is enabled for this course
+    store = modulestore()
+    course = store.get_course(course_key)
+
+    if course:
+        enable_subsection_gating = getattr(course, 'enable_subsection_gating', True)
+        log.info("[VIDEO-GATING] Course %s - enable_subsection_gating=%s, relationship=%s, content_key=%s",
+                 course_key, enable_subsection_gating, relationship, content_key)
+
+        if not enable_subsection_gating:
+            log.info("[VIDEO-GATING] Manual gating DISABLED - checking for video-based prerequisites")
+            # If manual gating is disabled, check for video-based prerequisites
+            # Only check for 'requires' relationship (when checking if THIS content requires a prereq)
+            if relationship == 'requires':
+                has_video_prereq = _has_video_based_prerequisite_requirement(content_key)
+                log.info("[VIDEO-GATING] Video-based prerequisite requirement for %s: %s",
+                         content_key, has_video_prereq)
+                if has_video_prereq:
+                    # Return a pseudo-milestone to indicate video-based prerequisite exists
+                    log.info("[VIDEO-GATING] Returning pseudo-milestone for video-based gating")
+                    return {
+                        'id': 'video-based-prereq',
+                        'namespace': 'video-based-gating',
+                        'video_based': True  # Special flag to indicate this is video-based gating
+                    }
+            # Otherwise return None (no prerequisite)
+            log.info("[VIDEO-GATING] No video-based prerequisites found, returning None")
+            return None
+    else:
+        log.warning("[VIDEO-GATING] Could not retrieve course for %s", course_key)
+
     try:
         return find_gating_milestones(course_key, content_key, relationship)[0]
     except IndexError:
@@ -336,6 +773,13 @@ def is_gate_fulfilled(course_key, gating_content_key, user_id):
         Returns True if section has no unfufilled milestones or is not a prerequisite.
         Returns False otherwise
     """
+    # Check if subsection gating is enabled for this course
+    store = modulestore()
+    course = store.get_course(course_key)
+    if course and not course.enable_subsection_gating:
+        # If gating is disabled, always return that gate is fulfilled
+        return True
+
     gating_milestone = get_gating_milestone(course_key, gating_content_key, "fulfills")
     if not gating_milestone:
         return True
@@ -366,6 +810,23 @@ def compute_is_prereq_met(content_id, user_id, recalc_on_unmet=False):
         prereq_meta_info = { 'url': prereq_url|None, 'display_name': prereq_name|None}
     """
     course_key = content_id.course_key
+
+    # Check if subsection gating is enabled for this course
+    store = modulestore()
+    course = store.get_course(course_key)
+
+    log.info("[VIDEO-GATING] compute_is_prereq_met called for content_id=%s, user_id=%s", content_id, user_id)
+
+    if course:
+        enable_subsection_gating = getattr(course, 'enable_subsection_gating', True)
+        log.info("[VIDEO-GATING] Course %s - enable_subsection_gating=%s", course_key, enable_subsection_gating)
+
+        if not enable_subsection_gating:
+            # If manual gating is disabled, check video-based prerequisites instead
+            log.info("[VIDEO-GATING] Manual gating disabled - using video-based prerequisites")
+            return _check_video_based_prerequisites(content_id, user_id)
+    else:
+        log.warning("[VIDEO-GATING] Could not retrieve course %s in compute_is_prereq_met", course_key)
 
     # if unfullfilled milestones exist it means prereq has not been met
     unfulfilled_milestones = milestones_helpers.get_course_content_milestones(
