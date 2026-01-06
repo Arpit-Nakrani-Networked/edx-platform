@@ -111,6 +111,24 @@ def _filter_entrance_exam_grader(graders):
     return graders
 
 
+def _get_safe_help_url(token):
+    """
+    Safely get help URL for a given token, handling configuration errors.
+    Returns empty string if help URL cannot be retrieved.
+    """
+    try:
+        import configparser
+        help_expert = HelpUrlExpert.the_one()
+        # Ensure config is loaded before accessing it
+        if not hasattr(help_expert, 'config') or help_expert.config is None:
+            help_expert.config = configparser.ConfigParser()
+            help_expert.config.read(help_expert.ini_file_name)
+        return help_expert.url_for_token(token)
+    except Exception as e:  # pylint: disable=broad-except
+        log.warning(f"Failed to get help URL for token '{token}': {e}")
+        return ""
+
+
 def _is_library_component_limit_reached(usage_key):
     """
     Verify if the library has reached the maximum number of components allowed in it
@@ -1191,9 +1209,7 @@ def create_xblock_info(  # lint-amnesty, pylint: disable=too-many-statements
             {
                 "video_sharing_enabled": True,
                 "video_sharing_options": course.video_sharing_options,
-                "video_sharing_doc_url": HelpUrlExpert.the_one().url_for_token(
-                    "social_sharing"
-                ),
+                "video_sharing_doc_url": _get_safe_help_url("social_sharing"),
             }
         )
 
@@ -1277,9 +1293,7 @@ def create_xblock_info(  # lint-amnesty, pylint: disable=too-many-statements
                     "highlights_enabled": True,
                     # used to be controlled by a waffle flag, now just always disabled
                     "highlights_preview_only": False,
-                    "highlights_doc_url": HelpUrlExpert.the_one().url_for_token(
-                        "content_highlights"
-                    ),
+                    "highlights_doc_url": _get_safe_help_url("content_highlights"),
                 }
             )
 
