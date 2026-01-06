@@ -331,6 +331,99 @@ def _find_first_incomplete_video_checkpoint(course_key, user):
         return None, None
 
 
+def _check_strict_subsection_order_prerequisites(content_id, user_id):
+    """
+    Check prerequisites based on strict subsection order.
+
+    This function enforces sequential subsection completion:
+    - Subsections must be completed in order
+    - A subsection is locked until the previous subsection is 100% complete
+    - Uses dynamic calculation based on current course structure (not stored IDs)
+    - Handles content reordering gracefully
+
+    Used for:
+    - Rule 1: enable_subsection_gating = True
+    - Rule 2: enable_subsection_gating = False AND minimum_time_on_unit > 0
+
+    Arguments:
+        content_id: UsageKey of the subsection being checked
+        user_id: The user ID
+
+    Returns:
+        tuple: (prereq_met, prereq_meta_info) - Same format as compute_is_prereq_met
+    """
+    try:
+        log.info("[STRICT-ORDER] Checking strict subsection order for subsection %s, user %s", content_id, user_id)
+        user = User.objects.get(id=user_id)
+        store = modulestore()
+        course_key = content_id.course_key
+
+        # Get all subsections in current course order (dynamic, not cached)
+        all_subsections = _get_all_subsections_in_course(course_key)
+
+        if not all_subsections:
+            log.info("[STRICT-ORDER] No subsections found in course - unlocking")
+            return True, {'url': None, 'display_name': None}
+
+        # Find the current subsection's position
+        current_position = None
+        for idx, (subsection_key, section_idx, subsection_idx) in enumerate(all_subsections):
+            if str(subsection_key) == str(content_id):
+                current_position = idx
+                log.info("[STRICT-ORDER] Found current subsection at position %d [section %d, subsection %d]",
+                        idx, section_idx, subsection_idx)
+                break
+
+        # Handle case where current subsection was deleted/not found
+        if current_position is None:
+            log.warning("[STRICT-ORDER] Current subsection %s not found in course structure", content_id)
+            return True, {'url': None, 'display_name': None}
+
+        # First subsection is always unlocked
+        if current_position == 0:
+            log.info("[STRICT-ORDER] ✓ First subsection - unlocked")
+            return True, {'url': None, 'display_name': None}
+
+        # Get the previous subsection (dynamic based on current order)
+        previous_position = current_position - 1
+        previous_subsection_key, prev_section_idx, prev_subsection_idx = all_subsections[previous_position]
+
+        log.info("[STRICT-ORDER] Previous subsection at position %d [section %d, subsection %d]: %s",
+                previous_position, prev_section_idx, prev_subsection_idx, previous_subsection_key)
+
+        # Check if previous subsection is completed
+        previous_completion = get_subsection_completion_percentage(previous_subsection_key, user)
+
+        log.info("[STRICT-ORDER] Previous subsection completion: %.1f%%", previous_completion)
+
+        if previous_completion >= 100.0:
+            # Previous subsection is complete - unlock current subsection
+            log.info("[STRICT-ORDER] ✓ Previous subsection complete - unlocking current subsection")
+            return True, {'url': None, 'display_name': None}
+        else:
+            # Previous subsection is incomplete - lock current subsection
+            try:
+                previous_subsection = store.get_item(previous_subsection_key)
+                prereq_meta_info = {
+                    'url': reverse('jump_to', kwargs={'course_id': course_key, 'location': previous_subsection_key}),
+                    'display_name': getattr(previous_subsection, 'display_name', 'Previous Subsection'),
+                    'id': str(previous_subsection_key)
+                }
+                log.info("[STRICT-ORDER] ✗ Previous subsection incomplete (%.1f%%) - locking current subsection",
+                        previous_completion)
+                return False, prereq_meta_info
+            except Exception as e:
+                log.error("[STRICT-ORDER] Error loading previous subsection %s: %s", previous_subsection_key, e)
+                # If we can't load the previous subsection, don't block access
+                return True, {'url': None, 'display_name': None}
+
+    except Exception as e:
+        log.error("[STRICT-ORDER] Error checking strict order prerequisites for %s, user %s: %s",
+                 content_id, user_id, e, exc_info=True)
+        # On error, don't block access (fail open for safety)
+        return True, {'url': None, 'display_name': None}
+
+
 def _check_video_based_prerequisites(content_id, user_id):
     """
     Check video-based prerequisites when enable_subsection_gating is False.
@@ -529,6 +622,11 @@ def get_gating_milestone(course_key, content_key, relationship):
     """
     Gets a single gating milestone dict related to the given supplied parameters.
 
+    Respects the priority rules:
+    - Rule 1: enable_subsection_gating = True → use stored milestones (manual gating)
+    - Rule 2: enable_subsection_gating = False AND minimum_time_on_unit > 0 → use strict order (pseudo-milestone)
+    - Rule 3: enable_subsection_gating = False AND minimum_time_on_unit = 0 → use video-based (pseudo-milestone)
+
     Arguments:
         course_key (str|CourseKey): The course key
         content_key (str|UsageKey): The content usage key
@@ -537,37 +635,55 @@ def get_gating_milestone(course_key, content_key, relationship):
     Returns:
         dict or None: The gating milestone dict or None
     """
-    # Check if subsection gating is enabled for this course
+    # Check course settings
     store = modulestore()
     course = store.get_course(course_key)
 
     if course:
-        enable_subsection_gating = getattr(course, 'enable_subsection_gating', True)
-        log.info("[VIDEO-GATING] Course %s - enable_subsection_gating=%s, relationship=%s, content_key=%s",
-                 course_key, enable_subsection_gating, relationship, content_key)
+        enable_subsection_gating = getattr(course, 'enable_subsection_gating', False)
+        minimum_time_on_unit = getattr(course, 'minimum_time_on_unit', 0)
 
-        if not enable_subsection_gating:
-            log.info("[VIDEO-GATING] Manual gating DISABLED - checking for video-based prerequisites")
-            # If manual gating is disabled, check for video-based prerequisites
+        log.info("[PREREQ-MILESTONE] Course %s - enable_subsection_gating=%s, minimum_time_on_unit=%s, relationship=%s",
+                 course_key, enable_subsection_gating, minimum_time_on_unit, relationship)
+
+        # RULE 1: enable_subsection_gating = True → use stored milestones (will be handled below)
+        if enable_subsection_gating:
+            log.info("[PREREQ-MILESTONE] Rule 1: Using stored milestones (manual gating)")
+            # Fall through to use stored milestones
+        # RULE 2: enable_subsection_gating = False AND minimum_time_on_unit > 0 → strict order
+        elif minimum_time_on_unit > 0:
+            log.info("[PREREQ-MILESTONE] Rule 2: Using strict subsection order")
+            # Only return pseudo-milestone for 'requires' relationship
+            if relationship == 'requires':
+                return {
+                    'id': 'strict-order-prereq',
+                    'namespace': 'strict-order-gating',
+                    'strict_order': True  # Special flag to indicate strict order gating
+                }
+            return None
+        # RULE 3: enable_subsection_gating = False AND minimum_time_on_unit = 0 → video-based
+        else:
+            log.info("[PREREQ-MILESTONE] Rule 3: Using video-based prerequisites")
             # Only check for 'requires' relationship (when checking if THIS content requires a prereq)
             if relationship == 'requires':
                 has_video_prereq = _has_video_based_prerequisite_requirement(content_key)
-                log.info("[VIDEO-GATING] Video-based prerequisite requirement for %s: %s",
+                log.info("[PREREQ-MILESTONE] Video-based prerequisite requirement for %s: %s",
                          content_key, has_video_prereq)
                 if has_video_prereq:
                     # Return a pseudo-milestone to indicate video-based prerequisite exists
-                    log.info("[VIDEO-GATING] Returning pseudo-milestone for video-based gating")
+                    log.info("[PREREQ-MILESTONE] Returning pseudo-milestone for video-based gating")
                     return {
                         'id': 'video-based-prereq',
                         'namespace': 'video-based-gating',
                         'video_based': True  # Special flag to indicate this is video-based gating
                     }
             # Otherwise return None (no prerequisite)
-            log.info("[VIDEO-GATING] No video-based prerequisites found, returning None")
+            log.info("[PREREQ-MILESTONE] No video-based prerequisites found, returning None")
             return None
     else:
-        log.warning("[VIDEO-GATING] Could not retrieve course for %s", course_key)
+        log.warning("[PREREQ-MILESTONE] Could not retrieve course for %s", course_key)
 
+    # For Rule 1 (enable_subsection_gating = True), use stored milestones
     try:
         return find_gating_milestones(course_key, content_key, relationship)[0]
     except IndexError:
@@ -764,6 +880,10 @@ def is_gate_fulfilled(course_key, gating_content_key, user_id):
     Determines if a prerequisite section specified by gating_content_key
     has any unfulfilled milestones.
 
+    Respects the priority rules:
+    - Rule 1: enable_subsection_gating = True → check stored milestones
+    - Rule 2 & 3: enable_subsection_gating = False → check completion directly
+
     Arguments:
         course_key (CourseUsageLocator): Course locator
         gating_content_key (BlockUsageLocator): The locator for the section content
@@ -773,32 +893,52 @@ def is_gate_fulfilled(course_key, gating_content_key, user_id):
         Returns True if section has no unfufilled milestones or is not a prerequisite.
         Returns False otherwise
     """
-    # Check if subsection gating is enabled for this course
+    # Check course settings
     store = modulestore()
     course = store.get_course(course_key)
-    if course and not course.enable_subsection_gating:
-        # If gating is disabled, always return that gate is fulfilled
+
+    if not course:
         return True
 
-    gating_milestone = get_gating_milestone(course_key, gating_content_key, "fulfills")
-    if not gating_milestone:
-        return True
+    enable_subsection_gating = getattr(course, 'enable_subsection_gating', False)
+    minimum_time_on_unit = getattr(course, 'minimum_time_on_unit', 0)
 
-    unfulfilled_milestones = [
-        m['content_id'] for m in find_gating_milestones(
-            course_key,
-            None,
-            'requires',
-            {'id': user_id}
-        ) if m['namespace'] == gating_milestone['namespace']
-    ]
-    return not unfulfilled_milestones
+    # RULE 1: enable_subsection_gating = True → use stored milestones
+    if enable_subsection_gating:
+        gating_milestone = get_gating_milestone(course_key, gating_content_key, "fulfills")
+        if not gating_milestone:
+            return True
+
+        unfulfilled_milestones = [
+            m['content_id'] for m in find_gating_milestones(
+                course_key,
+                None,
+                'requires',
+                {'id': user_id}
+            ) if m['namespace'] == gating_milestone['namespace']
+        ]
+        return not unfulfilled_milestones
+
+    # RULE 2 & 3: enable_subsection_gating = False → check completion directly
+    # For strict order and video-based, a gate is fulfilled when the subsection is 100% complete
+    user = User.objects.get(id=user_id)
+    completion = get_subsection_completion_percentage(gating_content_key, user)
+
+    log.info("[PREREQ] is_gate_fulfilled for subsection %s, user %s: completion=%.1f%%",
+             gating_content_key, user_id, completion)
+
+    return completion >= 100.0
 
 
 def compute_is_prereq_met(content_id, user_id, recalc_on_unmet=False):
     """
     Returns true if the prequiste has been met for a given milestone.
     Will recalculate the subsection grade if specified and prereq unmet
+
+    Prerequisite logic follows strict priority rules:
+    - Rule 1 (highest): If enable_subsection_gating = True → strict subsection order
+    - Rule 2: If enable_subsection_gating = False AND minimum_time_on_unit > 0 → strict subsection order
+    - Rule 3: If enable_subsection_gating = False AND minimum_time_on_unit = 0 → video-based prerequisites
 
     Arguments:
         content_id (BlockUsageLocator): BlockUsageLocator for the content
@@ -811,52 +951,38 @@ def compute_is_prereq_met(content_id, user_id, recalc_on_unmet=False):
     """
     course_key = content_id.course_key
 
-    # Check if subsection gating is enabled for this course
+    # Get course to check settings
     store = modulestore()
     course = store.get_course(course_key)
 
-    log.info("[VIDEO-GATING] compute_is_prereq_met called for content_id=%s, user_id=%s", content_id, user_id)
+    log.info("[PREREQ] compute_is_prereq_met called for content_id=%s, user_id=%s", content_id, user_id)
 
-    if course:
-        enable_subsection_gating = getattr(course, 'enable_subsection_gating', True)
-        log.info("[VIDEO-GATING] Course %s - enable_subsection_gating=%s", course_key, enable_subsection_gating)
+    if not course:
+        log.warning("[PREREQ] Could not retrieve course %s in compute_is_prereq_met", course_key)
+        # Default to no prerequisites if course not found
+        return True, {'url': None, 'display_name': None}
 
-        if not enable_subsection_gating:
-            # If manual gating is disabled, check video-based prerequisites instead
-            log.info("[VIDEO-GATING] Manual gating disabled - using video-based prerequisites")
-            return _check_video_based_prerequisites(content_id, user_id)
-    else:
-        log.warning("[VIDEO-GATING] Could not retrieve course %s in compute_is_prereq_met", course_key)
+    # Get settings
+    enable_subsection_gating = getattr(course, 'enable_subsection_gating', False)
+    minimum_time_on_unit = getattr(course, 'minimum_time_on_unit', 0)
 
-    # if unfullfilled milestones exist it means prereq has not been met
-    unfulfilled_milestones = milestones_helpers.get_course_content_milestones(
-        course_key,
-        content_id,
-        'requires',
-        user_id
-    )
+    log.info("[PREREQ] Course %s settings - enable_subsection_gating=%s, minimum_time_on_unit=%s",
+             course_key, enable_subsection_gating, minimum_time_on_unit)
 
-    prereq_met = not unfulfilled_milestones
-    prereq_meta_info = {'url': None, 'display_name': None}
+    # PRIORITY RULE 1: enable_subsection_gating = True → strict subsection order
+    if enable_subsection_gating:
+        log.info("[PREREQ] ✓ Rule 1 activated: enable_subsection_gating=True → Using strict subsection order")
+        return _check_strict_subsection_order_prerequisites(content_id, user_id)
 
-    if prereq_met or not recalc_on_unmet:
-        return prereq_met, prereq_meta_info
+    # PRIORITY RULE 2: enable_subsection_gating = False AND minimum_time_on_unit > 0 → strict subsection order
+    if minimum_time_on_unit > 0:
+        log.info("[PREREQ] ✓ Rule 2 activated: enable_subsection_gating=False AND minimum_time_on_unit=%d → Using strict subsection order",
+                 minimum_time_on_unit)
+        return _check_strict_subsection_order_prerequisites(content_id, user_id)
 
-    milestone = unfulfilled_milestones[0]
-    student = User.objects.get(id=user_id)
-    store = modulestore()
-
-    with store.bulk_operations(course_key):
-        subsection_usage_key = UsageKey.from_string(_get_gating_block_id(milestone))
-        subsection = store.get_item(subsection_usage_key)
-        prereq_meta_info = {
-            'url': reverse('jump_to', kwargs={'course_id': course_key, 'location': subsection_usage_key}),
-            'display_name': subsection.display_name,
-            'id': str(subsection_usage_key)
-        }
-        prereq_met = update_milestone(milestone, subsection_usage_key, milestone, student)
-
-    return prereq_met, prereq_meta_info
+    # PRIORITY RULE 3: enable_subsection_gating = False AND minimum_time_on_unit = 0 → video-based prerequisites
+    log.info("[PREREQ] ✓ Rule 3 activated: enable_subsection_gating=False AND minimum_time_on_unit=0 → Using video-based prerequisites")
+    return _check_video_based_prerequisites(content_id, user_id)
 
 
 def update_milestone(milestone, usage_key, prereq_milestone, user, grade_percentage=None, completion_percentage=None):
