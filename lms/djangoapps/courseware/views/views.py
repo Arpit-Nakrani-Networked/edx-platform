@@ -1622,8 +1622,10 @@ def render_xblock(request, usage_key_string, check_if_enrolled=True, disable_sta
         if completion_service and completion_service.completion_tracking_enabled():
             if completion_service.blocks_to_mark_complete_on_view({block}):
                 enable_completion_on_view_service = True
+                # Convert minutes to milliseconds (1 minute = 60000 ms)
+                delay_minutes = getattr(course, 'minimum_time_on_unit', 0)
                 student_view_context['wrap_xblock_data'] = {
-                    'mark-completed-on-view-after-delay': 1
+                    'mark-completed-on-view-after-delay': delay_minutes * 60000
                 }
 
         missed_deadlines, missed_gated_content = dates_banner_should_display(course_key, request.user)
@@ -1784,8 +1786,10 @@ def render_xblock_particular(request, usage_key_string):
         if completion_service and completion_service.completion_tracking_enabled():
             if completion_service.blocks_to_mark_complete_on_view({block}):
                 enable_completion_on_view_service = True
+                # Convert minutes to milliseconds (1 minute = 60000 ms)
+                delay_minutes = getattr(course, 'minimum_time_on_unit', 0)
                 student_view_context['wrap_xblock_data'] = {
-                    'mark-completed-on-view-after-delay': 1
+                    'mark-completed-on-view-after-delay': delay_minutes * 60000
                 }
 
         missed_deadlines, missed_gated_content = dates_banner_should_display(course_key, request.user)

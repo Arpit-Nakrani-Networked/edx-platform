@@ -3,8 +3,8 @@
 function throttle(fn, wait) {
     let time = 0;
     function delay() {
-        // Do not call the function until at least `wait` seconds after the
-        // last time the function was called.
+    // Do not call the function until at least `wait` seconds after the
+    // last time the function was called.
         const now = Date.now();
         if (time + wait < now) {
             time = now;
@@ -42,14 +42,19 @@ export class ElementViewing {
     handleVisible() {
         if (!this.becameVisibleAt) {
             this.becameVisibleAt = Date.now();
-            // We're now visible; after viewedAfterMs, if the top and bottom have been
-            // seen, this block will count as viewed.
-            setTimeout(
-                () => {
-                    this.checkIfViewed();
-                },
-                this.viewedAfterMs - this.seenForMs,
-            );
+            // Pure time-based completion - only time matters
+            if (this.viewedAfterMs === 0) {
+                // Immediate completion for 0 delay
+                this.checkIfViewed();
+            } else {
+                // Set timeout for required time
+                setTimeout(
+                    () => {
+                        this.checkIfViewed();
+                    },
+                    this.viewedAfterMs - this.seenForMs,
+                );
+            }
         }
     }
 
@@ -61,15 +66,15 @@ export class ElementViewing {
     }
 
     markTopSeen() {
-        // If this element has been seen for enough time, but the top wasn't visible, it may now be
-        // considered viewed.
+        // Pure time-based completion - visibility tracking not needed for completion
         this.topSeen = true;
-        this.checkIfViewed();
+        // Remove checkIfViewed() call - only time triggers completion now
     }
 
     markBottomSeen() {
+        // Pure time-based completion - visibility tracking not needed for completion
         this.bottomSeen = true;
-        this.checkIfViewed();
+        // Remove checkIfViewed() call - only time triggers completion now
     }
 
     getTotalTimeSeen() {
@@ -80,19 +85,20 @@ export class ElementViewing {
     }
 
     areViewedCriteriaMet() {
-        return this.topSeen && this.bottomSeen && (this.getTotalTimeSeen() >= this.viewedAfterMs);
+        // Pure time-based completion - only time matters, not visibility
+        return (this.getTotalTimeSeen() >= this.viewedAfterMs);
     }
 
     checkIfViewed() {
-        // User can provide a "now" value for testing purposes.
+    // User can provide a "now" value for testing purposes.
         if (this.hasBeenViewed) {
             return;
         }
-        // if (this.areViewedCriteriaMet()) {
+        if (this.areViewedCriteriaMet()) {
             this.hasBeenViewed = true;
             // Report to the tracker that we have been viewed
             this.callback(this.el, { elementHasBeenViewed: this.hasBeenViewed });
-        // }
+        }
     }
 }
 
@@ -109,13 +115,7 @@ export class ViewedEventTracker {
     constructor() {
         this.elementViewings = new Set();
         this.handlers = [];
-        if (window === window.parent) {
-            // Preview (legacy LMS frontend).
-            this.registerDomHandlers();
-        } else {
-            // Learning MFE.
-            window.addEventListener('message', this.handleVisibilityMessage.bind(this));
-        }
+        this.registerDomHandlers();
     }
 
     /** Add an element to track.  */
@@ -127,11 +127,7 @@ export class ViewedEventTracker {
                 (el, event) => this.callHandlers(el, event),
             ),
         );
-        // Update visibility status immediately after adding the element (in case it's already visible).
-        // We don't need this for the Learning MFE because it will send a message once the iframe is loaded.
-        if (window === window.parent) {
-            this.updateVisible();
-        }
+        this.updateVisible();
     }
 
     /** Register a new handler to be called when an element has been viewed.  */
@@ -152,8 +148,6 @@ export class ViewedEventTracker {
             const now = Date.now(); // Use the same "now" for all calculations
             const rect = elv.getBoundingRect();
             let visible = false;
-            
-            elv.handleVisible(now);
 
             if (rect.top > 0 && rect.top < window.innerHeight) {
                 elv.markTopSeen(now);
@@ -188,39 +182,5 @@ export class ViewedEventTracker {
         this.handlers.forEach((handler) => {
             handler(el, event);
         });
-    }
-
-    /** Handle a unit.visibilityStatus message from the Learning MFE. */
-    handleVisibilityMessage(event) {
-        if (event.data.type === 'unit.visibilityStatus') {
-            // const { topPosition, viewportHeight } = event.data.data;
-
-            this.elementViewings.forEach((elv) => {
-                // const rect = elv.getBoundingRect();
-                // elv.markTopSeen();
-                // elv.markBottomSeen();
-                // let visible = true;
-
-                // Convert iframe-relative rect coordinates to be relative to the parent's viewport.
-                // const elTopPosition = rect.top + topPosition;
-                // const elBottomPosition = rect.bottom + topPosition;
-// visible = true;
-                // Check if the element is visible in the parent's viewport.
-                // if (elTopPosition < viewportHeight && elTopPosition >= 0) {
-                //     elv.markTopSeen();
-                //     visible = true;
-                // }
-                // if (elBottomPosition <= viewportHeight && elBottomPosition > 0) {
-                //     elv.markBottomSeen();
-                //     visible = true;
-                // }
-
-                // if (visible) {
-                    elv.handleVisible();
-                // } else {
-                //     elv.handleNotVisible();
-                // }
-            });
-        }
     }
 }
