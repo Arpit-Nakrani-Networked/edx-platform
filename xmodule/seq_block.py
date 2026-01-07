@@ -353,13 +353,12 @@ class SequenceBlock(
         is_hidden_after_due = False
 
         if self._required_prereq():
+            # check if prerequisite has been met
+            prereq_met, prereq_meta_info = self._compute_is_prereq_met(True)
             if self.runtime.service(self, 'user').get_current_user().opt_attrs.get(ATTR_KEY_USER_IS_STAFF):
                 banner_text = _(
                     'This subsection is unlocked for learners when they meet the prerequisite requirements.'
                 )
-            else:
-                # check if prerequisite has been met
-                prereq_met, prereq_meta_info = self._compute_is_prereq_met(True)
 
         if prereq_met and view == STUDENT_VIEW and not self._can_user_view_content(course):
             if context.get('specific_masquerade', False):
@@ -445,13 +444,12 @@ class SequenceBlock(
         prereq_met = True
         prereq_meta_info = {}
         if self._required_prereq():
+            # check if prerequisite has been met
+            prereq_met, prereq_meta_info = self._compute_is_prereq_met(True)
             if self.runtime.service(self, 'user').get_current_user().opt_attrs.get(ATTR_KEY_USER_IS_STAFF):
                 banner_text = _(
                     'This subsection is unlocked for learners when they meet the prerequisite requirements.'
                 )
-            else:
-                # check if prerequisite has been met
-                prereq_met, prereq_meta_info = self._compute_is_prereq_met(True)
         if prereq_met:
             special_html_view = self._hidden_content_student_view(context) or self._special_exam_student_view()
             if special_html_view:
