@@ -86,7 +86,7 @@ export class ElementViewing {
 
     areViewedCriteriaMet() {
         // Pure time-based completion - only time matters, not visibility
-        return (this.getTotalTimeSeen() >= this.viewedAfterMs);
+        return (this.getTotalTimeSeen() >= this.viewedAfterMs || this.viewedAfterMs === 0);
     }
 
     checkIfViewed() {
@@ -120,13 +120,22 @@ export class ViewedEventTracker {
 
     /** Add an element to track.  */
     addElement(element, viewedAfterMs) {
-        this.elementViewings.add(
-            new ElementViewing(
-                element,
-                viewedAfterMs,
-                (el, event) => this.callHandlers(el, event),
-            ),
+        const elementViewing = new ElementViewing(
+            element,
+            viewedAfterMs,
+            (el, event) => this.callHandlers(el, event),
         );
+        this.elementViewings.add(elementViewing);
+
+        // If viewedAfterMs is 0, mark as viewed immediately regardless of visibility
+        // Use setTimeout to ensure handlers have been registered first
+        if (viewedAfterMs === 0) {
+            elementViewing.hasBeenViewed = true;
+            setTimeout(() => {
+                this.callHandlers(element, { elementHasBeenViewed: true });
+            }, 0);
+        }
+
         this.updateVisible();
     }
 
