@@ -95,6 +95,27 @@ class SequenceFields:  # lint-amnesty, pylint: disable=missing-class-docstring
         scope=Scope.settings,
     )
 
+    unskippable_unit = Boolean(
+        display_name=_("Unskippable Unit"),
+        help=_(
+            "If true, this subsection becomes a checkpoint. "
+            "All subsections after this one will require students to complete this subsection first."
+        ),
+        default=False,
+        scope=Scope.settings,
+    )
+
+    minimum_time_on_unit = Integer(
+        display_name=_("Completion On View Delay (Minutes)"),
+        help=_(
+            "Enter the number of minutes a student must spend viewing content before it is automatically "
+            "marked as complete. This applies to content blocks that are marked for completion on view. "
+            "The default is 0 minutes. Set to 0 to mark as complete immediately upon viewing."
+        ),
+        default=0,
+        scope=Scope.settings,
+    )
+
     is_entrance_exam = Boolean(
         display_name=_("Is Entrance Exam"),
         help=_(

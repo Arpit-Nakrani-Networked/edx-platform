@@ -57,6 +57,8 @@ SUPPORTED_FIELDS = [
     SupportedFieldType('has_scheduled_content'),
     SupportedFieldType('weight'),
     SupportedFieldType('show_correctness'),
+    SupportedFieldType('unskippable_unit'),
+    SupportedFieldType('minimum_time_on_unit'),
     SupportedFieldType('hide_from_toc'),
     # 'student_view_data'
     SupportedFieldType(StudentViewTransformer.STUDENT_VIEW_DATA, StudentViewTransformer),
@@ -64,6 +66,9 @@ SUPPORTED_FIELDS = [
     SupportedFieldType(StudentViewTransformer.STUDENT_VIEW_MULTI_DEVICE, StudentViewTransformer),
 
     SupportedFieldType('special_exam_info', MilestonesAndSpecialExamsTransformer),
+    SupportedFieldType('prerequisite_id', MilestonesAndSpecialExamsTransformer),
+    SupportedFieldType('prerequisite_url', MilestonesAndSpecialExamsTransformer),
+    SupportedFieldType('prerequisite_section_name', MilestonesAndSpecialExamsTransformer),
 
     # set the block_field_name to None so the entire data for the transformer is serialized
     SupportedFieldType(None, BlockCountsTransformer, BlockCountsTransformer.BLOCK_COUNTS),
@@ -108,6 +113,9 @@ FIELDS_ALLOWED_IN_AUTH_DENIED_CONTENT = [
     "authorization_denial_reason",
     "authorization_denial_message",
     'contains_gated_content',
+    'prerequisite_id',
+    'prerequisite_url',
+    'prerequisite_section_name',
 ]
 
 

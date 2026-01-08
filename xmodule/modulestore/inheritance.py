@@ -111,6 +111,26 @@ class InheritanceMixin(XBlockMixin):
         default="always",
     )
 
+    minimum_time_on_unit = Integer(
+        display_name=_("Completion On View Delay (Minutes)"),
+        help=_(
+            "Enter the number of minutes a student must spend viewing content before it is automatically "
+            "marked as complete. This applies to content blocks that are marked for completion on view. "
+            "The default is 0 minutes. Set to 0 to mark as complete immediately upon viewing."
+        ),
+        default=0,
+        scope=Scope.settings,
+    )
+
+    unskippable_unit = Boolean(
+        display_name=_("Unskippable Unit"),
+        help=_(
+            "If true, students cannot skip this unit and must complete it before accessing subsequent content."
+        ),
+        default=False,
+        scope=Scope.settings,
+    )
+
     rerandomize = String(
         display_name=_("Randomization"),
         help=_(

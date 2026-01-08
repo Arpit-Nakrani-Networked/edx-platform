@@ -466,6 +466,36 @@ def _save_xblock(
         # update the xblock and call any xblock callbacks
         xblock = _update_with_callback(xblock, user, old_metadata, old_content)
 
+        # Check if unskippable_unit was changed and trigger auto_update_prerequisites
+        if xblock.category in ("vertical", "sequential"):
+            old_unskippable = old_metadata.get('unskippable_unit', False)
+            new_unskippable = getattr(xblock, 'unskippable_unit', False)
+
+            if old_unskippable != new_unskippable:
+                log.info(
+                    f"[UNSKIPPABLE-UNIT-CHANGE] unskippable_unit changed from {old_unskippable} to {new_unskippable} "
+                    f"for {xblock.category} '{xblock.display_name}' ({xblock.location}). "
+                    f"Triggering auto_update_prerequisites."
+                )
+                try:
+                    # Lazy import to avoid circular dependency
+                    from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
+
+                    success, message, details = auto_update_prerequisites(
+                        xblock.location.course_key,
+                        min_score='0',
+                        min_completion='100'
+                    )
+                    if success:
+                        log.info(f"[UNSKIPPABLE-UNIT-CHANGE] auto_update_prerequisites succeeded: {message}")
+                    else:
+                        log.warning(f"[UNSKIPPABLE-UNIT-CHANGE] auto_update_prerequisites failed: {message}")
+                except Exception as e:
+                    log.error(
+                        f"[UNSKIPPABLE-UNIT-CHANGE] Error calling auto_update_prerequisites: {str(e)}",
+                        exc_info=True
+                    )
+
         # for static tabs, their containing course also records their display name
         course = store.get_course(xblock.location.course_key)
         if xblock.location.block_type == "static_tab":
@@ -508,13 +538,22 @@ def _save_xblock(
                 result["is_prereq"] = is_prereq
 
             if prereq_usage_key is not None:
-                gating_api.set_required_content(
-                    xblock.location.course_key,
-                    xblock.location,
-                    prereq_usage_key,
-                    prereq_min_score,
-                    prereq_min_completion,
-                )
+                # Handle special case for unskippable-unit-gating
+                if prereq_usage_key == "unskippable-unit-gating":
+                    log.info(
+                        f"[GATING] Skipping unskippable-unit-gating prerequisite for {xblock.location}. "
+                        f"Prerequisites are managed by auto_update_prerequisites."
+                    )
+                    # Don't set a prerequisite - this is managed by the unskippable_unit system
+                    pass
+                else:
+                    gating_api.set_required_content(
+                        xblock.location.course_key,
+                        xblock.location,
+                        prereq_usage_key,
+                        prereq_min_score,
+                        prereq_min_completion,
+                    )
 
         # If publish is set to 'republish' and this item is not in direct only categories and has previously been
         # published, then this item should be republished. This is used by staff locking to ensure that changing the
@@ -532,41 +571,48 @@ def _save_xblock(
             AiAsideSummaryConfig(course.id).set_summary_settings(xblock.location, {
                 'enabled': summary_configuration_enabled
             })
-        # Auto-update prerequisites if subsection gating is enabled and we're working with subsections
-        # or reordering children (which may affect subsection order)
-        gating_enabled = getattr(course, 'enable_subsection_gating', False)
-        trigger_condition = xblock.category == "sequential" or children_strings is not None
+        # Auto-update prerequisites when course structure changes
+        # This handles: subsection reordering, deletion, and content changes
+        gating_enabled = getattr(course, 'enable_subsection_gating', True)
 
-        # Always log this at INFO level so you can see it regardless of DEBUG setting
-        log.info(
-            f"[AUTO-PREREQUISITES-TRIGGER] _save_xblock called - "
-            f"category: {xblock.category}, "
-            f"gating_enabled: {gating_enabled}, "
-            f"children_updated: {children_strings is not None}, "
-            f"will_trigger: {gating_enabled and trigger_condition}"
-        )
+        if gating_enabled:
+            # Check if this change affects prerequisite ordering:
+            # 1. When a chapter's children are reordered (children_strings changed)
+            # 2. When any sequential is saved (might affect order)
+            should_update_prerequisites = False
+            reason = ""
 
-        if gating_enabled and trigger_condition:
-            log.info(
-                f"[AUTO-PREREQUISITES-TRIGGER] Triggering auto-update from _save_xblock - "
-                f"Reason: {'Subsection updated' if xblock.category == 'sequential' else 'Children reordered'}, "
-                f"XBlock: {xblock.location}, "
-                f"Course: {xblock.location.course_key}"
-            )
-            try:
-                # Lazy import to avoid circular dependency
-                from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
-                auto_update_prerequisites(xblock.location.course_key)
-                log.info(f"[AUTO-PREREQUISITES-TRIGGER] _save_xblock trigger completed successfully for course: {xblock.location.course_key}")
-            except Exception as e:
-                log.error(
-                    f"[AUTO-PREREQUISITES-TRIGGER] _save_xblock trigger failed for course {xblock.location.course_key}: {str(e)}",
-                    exc_info=True
+            if children_strings is not None and xblock.category == "chapter":
+                should_update_prerequisites = True
+                reason = "Chapter children reordered"
+            elif xblock.category == "sequential":
+                # Always update when a sequential is modified (could affect order or unskippable status)
+                should_update_prerequisites = True
+                reason = "Sequential saved or modified"
+
+            if should_update_prerequisites:
+                log.info(
+                    f"[GATING-AUTO-UPDATE] Triggering auto_update_prerequisites. "
+                    f"Reason: {reason}, XBlock: {xblock.location}"
                 )
-        elif not gating_enabled:
-            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _save_xblock - subsection gating disabled for course: {xblock.location.course_key}")
-        else:
-            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _save_xblock - trigger condition not met (category: {xblock.category}, children_updated: {children_strings is not None})")
+                try:
+                    # Lazy import to avoid circular dependency
+                    from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
+
+                    success, message, details = auto_update_prerequisites(
+                        xblock.location.course_key,
+                        min_score='0',
+                        min_completion='100'
+                    )
+                    if success:
+                        log.info(f"[GATING-AUTO-UPDATE] Prerequisites updated: {message}")
+                    else:
+                        log.warning(f"[GATING-AUTO-UPDATE] Failed to update prerequisites: {message}")
+                except Exception as e:
+                    log.error(
+                        f"[GATING-AUTO-UPDATE] Error updating prerequisites: {str(e)}",
+                        exc_info=True
+                    )
 
         # Note that children aren't being returned until we have a use case.
         return JsonResponse(result, encoder=EdxJSONEncoder)
@@ -826,40 +872,21 @@ def _move_item(source_usage_key, target_parent_usage_key, user, target_index=Non
                 f"from_parent: {source_parent.location}, "
                 f"to_parent: {target_parent_usage_key}"
             )
-            try:
-                course = store.get_course(source_usage_key.course_key)
-                gating_enabled = course and getattr(course, 'enable_subsection_gating', False)
+            # Note: Prerequisites are now controlled by unskippable_unit flags
+            # The system automatically handles subsection reordering
+            course = store.get_course(source_usage_key.course_key)
+            gating_enabled = course and getattr(course, 'enable_subsection_gating', True)
 
+            if course and gating_enabled:
                 log.debug(
-                    f"[AUTO-PREREQUISITES-TRIGGER] _move_item check - "
-                    f"course_found: {course is not None}, "
-                    f"gating_enabled: {gating_enabled}, "
+                    f"[GATING] Subsection moved - "
                     f"moved_block: {source_usage_key}, "
-                    f"block_type: {source_type}"
-                )
-
-                if course and gating_enabled:
-                    log.info(
-                        f"[AUTO-PREREQUISITES-TRIGGER] Triggering auto-update from _move_item - "
-                        f"Reason: Subsection moved/reordered, "
-                        f"Moved block: {source_usage_key}, "
-                        f"From: {source_parent.display_name}, "
-                        f"To: {target_parent.display_name}, "
-                        f"Course: {source_usage_key.course_key}"
-                    )
-                    # Lazy import to avoid circular dependency
-                    from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
-                    auto_update_prerequisites(source_usage_key.course_key)
-                    log.info(f"[AUTO-PREREQUISITES-TRIGGER] _move_item trigger completed successfully for course: {source_usage_key.course_key}")
-                else:
-                    log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _move_item - subsection gating disabled or course not found for: {source_usage_key.course_key}")
-            except Exception as e:
-                log.error(
-                    f"[AUTO-PREREQUISITES-TRIGGER] _move_item trigger failed after moving subsection {source_usage_key}: {str(e)}",
-                    exc_info=True
+                    f"from: {source_parent.display_name}, "
+                    f"to: {target_parent.display_name}. "
+                    f"Prerequisites are controlled by unskippable_unit flags."
                 )
         else:
-            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _move_item - moved block is not a subsection (type: {source_type})")
+            log.debug(f"[GATING] Moved block is not a subsection (type: {source_type})")
 
         context = {
             "move_source_locator": str(source_usage_key),
@@ -911,38 +938,35 @@ def _delete_item(usage_key, user):
 
         # Auto-update prerequisites if a subsection was deleted and subsection gating is enabled
         if block_type == "sequential":
-            log.info(f"[AUTO-PREREQUISITES-TRIGGER] Subsection deleted, checking if auto-update is needed - location: {usage_key}")
-            try:
-                course = store.get_course(usage_key.course_key)
-                gating_enabled = course and getattr(course, 'enable_subsection_gating', False)
+            log.info(f"[AUTO-PREREQUISITES-TRIGGER] Subsection deleted - location: {usage_key}")
+            course = store.get_course(usage_key.course_key)
+            gating_enabled = course and getattr(course, 'enable_subsection_gating', True)
 
-                log.debug(
-                    f"[AUTO-PREREQUISITES-TRIGGER] _delete_item check - "
-                    f"course_found: {course is not None}, "
-                    f"gating_enabled: {gating_enabled}, "
-                    f"deleted_block: {usage_key}"
+            if course and gating_enabled:
+                log.info(
+                    f"[GATING-AUTO-UPDATE] Subsection deleted, triggering auto_update_prerequisites. "
+                    f"Deleted block: {usage_key}"
                 )
-
-                if course and gating_enabled:
-                    log.info(
-                        f"[AUTO-PREREQUISITES-TRIGGER] Triggering auto-update from _delete_item - "
-                        f"Reason: Subsection deleted, "
-                        f"Deleted block: {usage_key}, "
-                        f"Course: {usage_key.course_key}"
-                    )
+                try:
                     # Lazy import to avoid circular dependency
                     from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
-                    auto_update_prerequisites(usage_key.course_key)
-                    log.info(f"[AUTO-PREREQUISITES-TRIGGER] _delete_item trigger completed successfully for course: {usage_key.course_key}")
-                else:
-                    log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _delete_item - subsection gating disabled or course not found for: {usage_key.course_key}")
-            except Exception as e:
-                log.error(
-                    f"[AUTO-PREREQUISITES-TRIGGER] _delete_item trigger failed after deleting subsection {usage_key}: {str(e)}",
-                    exc_info=True
-                )
+
+                    success, message, details = auto_update_prerequisites(
+                        usage_key.course_key,
+                        min_score='0',
+                        min_completion='100'
+                    )
+                    if success:
+                        log.info(f"[GATING-AUTO-UPDATE] Prerequisites updated after deletion: {message}")
+                    else:
+                        log.warning(f"[GATING-AUTO-UPDATE] Failed to update prerequisites after deletion: {message}")
+                except Exception as e:
+                    log.error(
+                        f"[GATING-AUTO-UPDATE] Error updating prerequisites after deletion: {str(e)}",
+                        exc_info=True
+                    )
         else:
-            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Skipping auto-update from _delete_item - deleted block is not a subsection (type: {block_type})")
+            log.debug(f"[GATING] Deleted block is not a subsection (type: {block_type})")
 
 
 def delete_orphans(course_usage_key, user_id, commit=False):
@@ -1262,6 +1286,8 @@ def create_xblock_info(  # lint-amnesty, pylint: disable=too-many-statements
                 "group_access": xblock.group_access,
                 "user_partitions": user_partitions,
                 "show_correctness": xblock.show_correctness,
+                "unskippable_unit": getattr(xblock, 'unskippable_unit', None),
+                "minimum_time_on_unit": getattr(xblock, 'minimum_time_on_unit', None),
                 "hide_from_toc": xblock.hide_from_toc,
                 "enable_hide_from_toc_ui": settings.FEATURES.get("ENABLE_HIDE_FROM_TOC_UI", False),
                 "xblock_type": get_icon(xblock),

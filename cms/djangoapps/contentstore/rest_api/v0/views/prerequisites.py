@@ -21,15 +21,21 @@ log = logging.getLogger(__name__)
 
 def auto_update_prerequisites(course_key, min_score='', min_completion='100'):
     """
-    Utility function to automatically update prerequisites for all subsections in a course.
+    Automatically set prerequisites based on unskippable_unit flags.
 
-    This function can be called from various places to keep prerequisites in sync with
-    the course structure.
+    When a subsection has unskippable_unit=True, it becomes a checkpoint.
+    All subsections after the checkpoint will have it as a prerequisite.
+
+    Example:
+        Subsections: 1, 2, 3, 4 ,
+        If subsection 2 has unskippable_unit=True:
+        - Subsection 3 gets prerequisite: subsection 2
+        - Subsection 4 gets prerequisite: subsection 2
 
     Args:
         course_key: The course key (can be string or CourseKey object)
-        min_score: Minimum score percentage (default: '' - no score requirement, only completion)
-        min_completion: Minimum completion percentage (default: '100' - must complete all content)
+        min_score: Minimum score percentage (default: '', which means no minimum score)
+        min_completion: Minimum completion percentage (default: '100')
 
     Returns:
         tuple: (success: bool, message: str, details: list)
@@ -50,11 +56,10 @@ def auto_update_prerequisites(course_key, min_score='', min_completion='100'):
             return False, 'Course not found', []
 
         # Check if subsection gating is enabled
-        gating_enabled = getattr(course, 'enable_subsection_gating', False)
+        gating_enabled = getattr(course, 'enable_subsection_gating', True)
         log.info(f"[AUTO-PREREQUISITES] Gating enabled: {gating_enabled} for course: {course_key}")
 
         if not gating_enabled:
-            log.info(f"[AUTO-PREREQUISITES] Skipping - gating disabled for course: {course_key}")
             return False, 'Subsection gating is not enabled', []
 
         # Get all subsections (sequential blocks) in the course in order
@@ -70,69 +75,155 @@ def auto_update_prerequisites(course_key, min_score='', min_completion='100'):
         if not subsections:
             return True, 'No subsections found in the course', []
 
-        # Process each subsection
-        details = []
-        previous_subsection = None
+        # Find all checkpoints (subsections with unskippable_unit=True)
+        checkpoints = []
+        for idx, subsection in enumerate(subsections):
+            unskippable = getattr(subsection, 'unskippable_unit', False)
+            if unskippable:
+                checkpoints.append((idx, subsection))
+                log.info(
+                    f"[AUTO-PREREQUISITES] Checkpoint found at position {idx + 1}: "
+                    f"'{subsection.display_name}' ({subsection.location})"
+                )
 
-        for idx, subsection in enumerate(subsections, 1):
+        # First pass: Create milestones for all checkpoints
+        for idx, checkpoint in checkpoints:
             try:
-                # Mark this subsection as a prerequisite
-                gating_api.add_prerequisite(course_key, subsection.location)
+                # Add prerequisite (creates milestone if it doesn't exist)
+                gating_api.add_prerequisite(course_key, checkpoint.location)
+                log.info(
+                    f"[AUTO-PREREQUISITES] Created prerequisite milestone for '{checkpoint.display_name}'"
+                )
+            except Exception as e:
+                log.error(
+                    f"[AUTO-PREREQUISITES] Error creating prerequisite milestone for "
+                    f"'{checkpoint.display_name}': {str(e)}"
+                )
 
-                prereq_usage_key = None
-
-                # If this is not the first subsection, set the previous subsection as prerequisite
-                if previous_subsection:
-                    prereq_usage_key = str(previous_subsection.location)
-                    log.info(f"[AUTO-PREREQUISITES] [{idx}/{len(subsections)}] '{subsection.display_name}' requires '{previous_subsection.display_name}'")
+        if not checkpoints:
+            # Clear all prerequisites if no checkpoints
+            log.info("[AUTO-PREREQUISITES] No checkpoints found. Clearing all prerequisites.")
+            for subsection in subsections:
+                try:
                     gating_api.set_required_content(
                         course_key,
                         subsection.location,
-                        prereq_usage_key,
-                        str(min_score),
-                        str(min_completion)
+                        None,
+                        None,
+                        None
                     )
+                except Exception as e:
+                    log.debug(f"[AUTO-PREREQUISITES] Error clearing prerequisite: {e}")
+
+            return True, 'No checkpoints found. All prerequisites cleared.', []
+
+        # Apply prerequisites: each subsection gets the most recent checkpoint before it
+        details = []
+        prerequisites_set = 0
+
+        # Parse min_score and min_completion
+        try:
+            min_score_int = int(min_score) if min_score else 0
+        except (ValueError, TypeError):
+            min_score_int = 0
+
+        try:
+            min_completion_int = int(min_completion) if min_completion else 100
+        except (ValueError, TypeError):
+            min_completion_int = 100
+
+        for idx, subsection in enumerate(subsections):
+            unskippable = getattr(subsection, 'unskippable_unit', False)
+
+            # Find the most recent checkpoint before this subsection
+            active_checkpoint = None
+            for checkpoint_idx, checkpoint in checkpoints:
+                if checkpoint_idx < idx:
+                    active_checkpoint = checkpoint
                 else:
-                    log.info(f"[AUTO-PREREQUISITES] [{idx}/{len(subsections)}] '{subsection.display_name}' - first subsection, no prereq")
+                    break
 
-                # Handle empty string for min_score and min_completion
-                prereq_min_score = None
-                prereq_min_completion = None
-                if prereq_usage_key:
+            # Set prerequisite if there's an active checkpoint
+            if active_checkpoint and not unskippable:
+                try:
+                    # Ensure the prerequisite milestone exists before setting it
+                    prereq_key = active_checkpoint.location
+
+                    # Verify milestone exists
+                    from milestones import api as milestones_api
+                    milestone_namespace = f"{prereq_key}{'.gating'}"
+                    milestones = milestones_api.get_milestones(milestone_namespace)
+
+                    if not milestones:
+                        log.warning(
+                            f"[AUTO-PREREQUISITES] Milestone not found for '{active_checkpoint.display_name}', "
+                            f"creating it now..."
+                        )
+                        gating_api.add_prerequisite(course_key, prereq_key)
+
+                    # Now set the required content
+                    gating_api.set_required_content(
+                        course_key,
+                        subsection.location,
+                        prereq_key,  # Pass UsageKey directly, not string
+                        str(min_score_int),
+                        str(min_completion_int)
+                    )
+                    prerequisites_set += 1
+                    log.info(
+                        f"[AUTO-PREREQUISITES] Set prerequisite: '{subsection.display_name}' "
+                        f"requires '{active_checkpoint.display_name}' "
+                        f"(score>={min_score_int}%, completion>={min_completion_int}%)"
+                    )
+                    details.append({
+                        'usage_key': str(subsection.location),
+                        'display_name': subsection.display_name,
+                        'position': idx + 1,
+                        'unskippable_unit': unskippable,
+                        'prerequisite': str(active_checkpoint.location),
+                        'prerequisite_name': active_checkpoint.display_name,
+                    })
+                except Exception as e:
+                    log.error(
+                        f"[AUTO-PREREQUISITES] Error setting prerequisite for "
+                        f"'{subsection.display_name}': {str(e)}",
+                        exc_info=True
+                    )
+                    details.append({
+                        'usage_key': str(subsection.location),
+                        'display_name': subsection.display_name,
+                        'position': idx + 1,
+                        'error': str(e)
+                    })
+            else:
+                # Clear prerequisite if no active checkpoint or is itself a checkpoint
+                if not unskippable:
                     try:
-                        prereq_min_score = int(min_score) if min_score else 0
-                    except (ValueError, TypeError):
-                        prereq_min_score = 0
-                    try:
-                        prereq_min_completion = int(min_completion) if min_completion else 0
-                    except (ValueError, TypeError):
-                        prereq_min_completion = 0
+                        gating_api.set_required_content(
+                            course_key,
+                            subsection.location,
+                            None,
+                            None,
+                            None
+                        )
+                    except Exception as e:
+                        log.debug(f"[AUTO-PREREQUISITES] Error clearing prerequisite: {e}")
 
                 details.append({
                     'usage_key': str(subsection.location),
                     'display_name': subsection.display_name,
-                    'is_prereq': True,
-                    'prereq_usage_key': prereq_usage_key,
-                    'prereq_min_score': prereq_min_score,
-                    'prereq_min_completion': prereq_min_completion,
+                    'position': idx + 1,
+                    'unskippable_unit': unskippable,
+                    'prerequisite': None,
                 })
 
-            except Exception as e:
-                log.error(
-                    f"[AUTO-PREREQUISITES] Error for subsection {subsection.location}: {str(e)}"
-                )
-                details.append({
-                    'usage_key': str(subsection.location),
-                    'display_name': subsection.display_name,
-                    'error': str(e)
-                })
-            finally:
-                # IMPORTANT: Always update previous_subsection, even if there was an error
-                # This ensures sequential chaining: Lesson 2→1, Lesson 3→2, Lesson 4→3, etc.
-                previous_subsection = subsection
+        message = (
+            f'Prerequisites updated successfully: {len(checkpoints)} checkpoints found, '
+            f'{prerequisites_set} prerequisites set.'
+        )
 
-        log.info(f"[AUTO-PREREQUISITES] ✓ Completed! Processed {len(subsections)} subsections in course: {course_key}")
-        return True, f'Prerequisites set successfully for {len(subsections)} subsections', details
+        log.info(f"[AUTO-PREREQUISITES] ✓ {message}")
+        return True, message, details
 
     except Exception as e:
         log.error(f"[AUTO-PREREQUISITES] ✗ Error for course {course_key}: {str(e)}", exc_info=True)
@@ -142,32 +233,54 @@ def auto_update_prerequisites(course_key, min_score='', min_completion='100'):
 @view_auth_classes()
 class AutoPrerequisitesView(DeveloperErrorViewMixin, APIView):
     """
-    API endpoint to automatically set prerequisites for all subsections in a course.
+    API endpoint to automatically set prerequisites based on unskippable_unit flags.
 
     POST /api/contentstore/v0/prerequisites/{course_id}/auto
 
-    This endpoint will:
-    1. Set isPrereq=true for all subsections in the course
-    2. Set each subsection's prerequisite to the previous subsection (based on order)
-    3. Optionally set min_score and min_completion requirements (default: no score requirement, 100% completion)
+    How it works:
+    - Subsections with unskippable_unit=True become checkpoints
+    - All subsections after a checkpoint get that checkpoint as a prerequisite
+    - Students must complete checkpoints before accessing later content
+
+    Example:
+        Subsections: 1, 2, 3, 4
+        If subsection 2 has unskippable_unit=True:
+        - Subsection 3 requires subsection 2
+        - Subsection 4 requires subsection 2
 
     Request body (optional):
     {
-        "min_score": "",           # Default: "" (no score requirement, only completion matters)
-        "min_completion": 100      # Default: 100 (must complete 100%)
+        "min_score": "",           # Minimum score % (default: 0, no minimum)
+        "min_completion": 100      # Minimum completion % (default: 100)
     }
 
     Response:
     {
         "success": true,
-        "message": "Prerequisites set successfully",
+        "message": "Prerequisites updated successfully: 2 checkpoints found, 5 prerequisites set",
         "subsections_processed": 10,
         "details": [
             {
                 "usage_key": "block-v1:...",
                 "display_name": "Subsection 1",
-                "is_prereq": true,
-                "prereq_usage_key": null
+                "position": 1,
+                "unskippable_unit": false,
+                "prerequisite": null
+            },
+            {
+                "usage_key": "block-v1:...",
+                "display_name": "Subsection 2",
+                "position": 2,
+                "unskippable_unit": true,
+                "prerequisite": null
+            },
+            {
+                "usage_key": "block-v1:...",
+                "display_name": "Subsection 3",
+                "position": 3,
+                "unskippable_unit": false,
+                "prerequisite": "block-v1:...",
+                "prerequisite_name": "Subsection 2"
             },
             ...
         ]

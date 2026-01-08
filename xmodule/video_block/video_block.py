@@ -407,6 +407,25 @@ class VideoBlock(
         autoadvance_this_video = self.auto_advance and autoadvance_enabled
         is_embed = context.get('public_video_embed', False)
         is_public_view = view == PUBLIC_VIEW
+
+        # Get minimum_time_on_unit from parent subsection (inherited field)
+        # This is used to set a minimum viewing time for video completion
+        # Convert minutes to milliseconds (1 minute = 60000 ms)
+        minimum_viewing_time_ms = 0
+        try:
+            # Try to get parent blocks to find the subsection
+            parent = self.get_parent()
+            if parent:
+                # If parent is a vertical (unit), get its parent (subsection)
+                if hasattr(parent, 'get_parent'):
+                    subsection = parent.get_parent()
+                    if subsection:
+                        minimum_viewing_time_minutes = getattr(subsection, 'minimum_time_on_unit', 0)
+                        minimum_viewing_time_ms = minimum_viewing_time_minutes * 60000
+        except Exception:  # pylint: disable=broad-except
+            # If we can't get the parent, default to 0
+            minimum_viewing_time_ms = 0
+
         metadata = {
             'autoAdvance': autoadvance_this_video,
             # For now, the option "data-autohide-html5" is hard coded. This option
@@ -468,6 +487,7 @@ class VideoBlock(
                 if getattr(self.runtime, 'suppports_state_for_anonymous_users', False) else ''
             ),
             'ytTestTimeout': settings.YOUTUBE['TEST_TIMEOUT'],
+            'minimumViewingTimeMs': minimum_viewing_time_ms,
         }
 
         bumperize(self)

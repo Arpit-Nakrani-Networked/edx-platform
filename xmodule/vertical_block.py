@@ -102,11 +102,10 @@ class VerticalBlock(
         completion_service = self.runtime.service(self, 'completion')
         if completion_service and completion_service.completion_tracking_enabled():
             child_blocks_to_complete_on_view = completion_service.blocks_to_mark_complete_on_view(child_blocks)
-            # Get the course to access completion_on_view_delay_minutes setting
+            # Get the minimum_time_on_unit from parent subsection (inherited field)
             # Convert minutes to milliseconds (1 minute = 60000 ms)
-            from xmodule.modulestore.django import modulestore
-            course = modulestore().get_course(self.location.course_key)  # lint-amnesty, pylint: disable=no-member
-            delay_minutes = getattr(course, 'minimum_time_on_unit', 0)
+            parent_subsection = self.get_parent()
+            delay_minutes = getattr(parent_subsection, 'minimum_time_on_unit', 0) if parent_subsection else 0
             complete_on_view_delay = delay_minutes * 60000
 
         child_context['child_of_vertical'] = True

@@ -11,7 +11,6 @@ from xmodule.modulestore.django import modulestore
 
 from cms.djangoapps.models.settings.course_metadata import CourseMetadata
 from cms.djangoapps.contentstore.api.views.utils import get_bool_param
-from cms.djangoapps.contentstore.rest_api.v0.views.prerequisites import auto_update_prerequisites
 from common.djangoapps.student.auth import has_studio_read_access, has_studio_write_access
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin, verify_course_exists, view_auth_classes
 from ..serializers import CourseAdvancedSettingsSerializer
@@ -204,38 +203,25 @@ class AdvancedCourseSettingsView(DeveloperErrorViewMixin, APIView):
 
         updated_data = update_course_advanced_settings(course_block, request.data, request.user)
 
-        # Check if enable_subsection_gating was toggled to True
+        # Check if enable_subsection_gating was updated (for logging purposes)
         if 'enable_subsection_gating' in request.data:
             gating_value = request.data['enable_subsection_gating'].get('value', None)
 
             log.info(
-                f"[AUTO-PREREQUISITES-TRIGGER] enable_subsection_gating update detected - "
+                f"[GATING] enable_subsection_gating update - "
                 f"course: {course_key}, "
                 f"before: {gating_before}, "
-                f"after: {gating_value}, "
-                f"toggled_to_true: {gating_value is True and not gating_before}"
+                f"after: {gating_value}"
             )
 
-            # Auto-update prerequisites if enable_subsection_gating was toggled to True
             if gating_value is True and not gating_before:
                 log.info(
-                    f"[AUTO-PREREQUISITES-TRIGGER] Triggering auto-update from AdvancedCourseSettingsView - "
-                    f"Reason: Subsection gating enabled, "
-                    f"Course: {course_key}"
+                    f"[GATING] Subsection gating enabled for course {course_key}. "
+                    f"Prerequisites are now controlled by unskippable_unit flags on subsections."
                 )
-                try:
-                    auto_update_prerequisites(course_key)
-                    log.info(f"[AUTO-PREREQUISITES-TRIGGER] AdvancedCourseSettingsView trigger completed successfully for course: {course_key}")
-                except Exception as e:
-                    log.error(
-                        f"[AUTO-PREREQUISITES-TRIGGER] AdvancedCourseSettingsView trigger failed after enabling subsection gating for course {course_key}: {str(e)}",
-                        exc_info=True
-                    )
             elif gating_value is False and gating_before:
-                log.info(f"[AUTO-PREREQUISITES-TRIGGER] Subsection gating disabled for course {course_key} - auto-prerequisites will not run")
-            elif gating_value is True and gating_before:
-                log.debug(f"[AUTO-PREREQUISITES-TRIGGER] Subsection gating was already enabled for course {course_key} - no auto-update needed")
+                log.info(f"[GATING] Subsection gating disabled for course {course_key}")
         else:
-            log.debug(f"[AUTO-PREREQUISITES-TRIGGER] enable_subsection_gating not in settings update for course: {course_key}")
+            log.debug(f"[GATING] enable_subsection_gating not in settings update for course: {course_key}")
 
         return Response(updated_data)

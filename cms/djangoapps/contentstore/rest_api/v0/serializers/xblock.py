@@ -59,6 +59,8 @@ class XblockSerializer(StrictSerializer):
     group_access = serializers.DictField(required=False, allow_null=True)
     user_partitions = serializers.ListField(required=False, allow_null=True)
     show_correctness = serializers.CharField(required=False, allow_null=True)
+    unskippable_unit = serializers.BooleanField(required=False, allow_null=True)
+    minimum_time_on_unit = serializers.IntegerField(required=False, allow_null=True)
     discussion_enabled = serializers.BooleanField(required=False, allow_null=True)
     ancestor_has_staff_lock = serializers.BooleanField(required=False, allow_null=True)
     user_partition_info = serializers.DictField(required=False, allow_null=True)

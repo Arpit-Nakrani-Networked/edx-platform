@@ -54,6 +54,7 @@ class MilestonesAndSpecialExamsTransformer(BlockStructureTransformer):
         block_structure.request_xblock_fields('is_practice_exam')
         block_structure.request_xblock_fields('is_timed_exam')
         block_structure.request_xblock_fields('entrance_exam_id')
+        block_structure.request_xblock_fields('unskippable_unit')
 
     def transform(self, usage_info, block_structure):
         """
@@ -65,23 +66,84 @@ class MilestonesAndSpecialExamsTransformer(BlockStructureTransformer):
             """
             Checks whether the user is gated from accessing this block, first via special exams,
             then via a general milestones check.
+
+            Returns:
+                tuple: (is_gated, prereq_meta_info) where prereq_meta_info contains gating details
             """
 
             if usage_info.has_staff_access:
-                return False
+                return False, None
             elif self.gated_by_required_content(block_key, block_structure, required_content):
-                return True
-            elif not self.include_gated_sections and self.has_pending_milestones_for_user(block_key, usage_info):
-                return True
+                return True, None
+            elif not self.include_gated_sections:
+                # Check for unskippable_unit prerequisites first (for subsections only)
+                if block_key.block_type == 'sequential':
+                    try:
+                        from openedx.core.lib.gating import api as gating_api
+                        prereq_met, prereq_meta_info = gating_api.compute_is_prereq_met(
+                            block_key,
+                            usage_info.user.id,
+                            recalc_on_unmet=False
+                        )
+                        if not prereq_met:
+                            return True, prereq_meta_info
+                    except Exception as e:
+                        log.exception(
+                            "Error checking unskippable_unit prerequisites for block %s: %s",
+                            block_key, e
+                        )
+
+                # Check for traditional milestone prerequisites
+                if self.has_pending_milestones_for_user(block_key, usage_info):
+                    return True, None
             elif (settings.FEATURES.get('ENABLE_SPECIAL_EXAMS', False) and
                   (self.is_special_exam(block_key, block_structure) and
                    not self.include_special_exams)):
-                return True
-            return False
+                return True, None
+            return False, None
 
         for block_key in block_structure.topological_traversal():
-            if user_gated_from_block(block_key):
-                block_structure.remove_block(block_key, False)
+            is_gated, prereq_meta_info = user_gated_from_block(block_key)
+            if is_gated:
+                # Set authorization denial fields for gated blocks to include them in API with metadata
+                if prereq_meta_info and block_key.block_type == 'sequential':
+                    block_structure.override_xblock_field(
+                        block_key,
+                        'authorization_denial_reason',
+                        'prerequisite_not_met'
+                    )
+                    prereq_name = prereq_meta_info.get('display_name', 'Required Content')
+                    prereq_url = prereq_meta_info.get('url', '')
+                    prereq_id = prereq_meta_info.get('id', '')
+                    block_structure.override_xblock_field(
+                        block_key,
+                        'authorization_denial_message',
+                        _('This content is locked. Complete the prerequisite "{prereq_name}" first.').format(
+                            prereq_name=prereq_name
+                        )
+                    )
+                    # Store prerequisite metadata for API serialization
+                    block_structure.set_transformer_block_field(
+                        block_key,
+                        self,
+                        'prerequisite_id',
+                        prereq_id
+                    )
+                    block_structure.set_transformer_block_field(
+                        block_key,
+                        self,
+                        'prerequisite_url',
+                        prereq_url
+                    )
+                    block_structure.set_transformer_block_field(
+                        block_key,
+                        self,
+                        'prerequisite_section_name',
+                        prereq_name
+                    )
+                else:
+                    # For other gated content (entrance exams, etc), remove the block
+                    block_structure.remove_block(block_key, False)
             elif self.is_special_exam(block_key, block_structure):
                 self.add_special_exam_info(block_key, block_structure, usage_info)
 
@@ -99,8 +161,11 @@ class MilestonesAndSpecialExamsTransformer(BlockStructureTransformer):
     @staticmethod
     def has_pending_milestones_for_user(block_key, usage_info):
         """
-        Test whether the current user has any unfulfilled milestones preventing
+        Test whether the current user has any unfulfilled traditional milestones preventing
         them from accessing this block.
+
+        Note: This only checks milestone-based prerequisites. Unskippable_unit prerequisites
+        are checked separately in user_gated_from_block.
         """
         return bool(milestones_helpers.get_course_content_milestones(
             str(block_key.course_key),

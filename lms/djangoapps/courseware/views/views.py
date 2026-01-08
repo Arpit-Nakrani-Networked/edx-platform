@@ -1622,8 +1622,22 @@ def render_xblock(request, usage_key_string, check_if_enrolled=True, disable_sta
         if completion_service and completion_service.completion_tracking_enabled():
             if completion_service.blocks_to_mark_complete_on_view({block}):
                 enable_completion_on_view_service = True
+                # Get minimum_time_on_unit from parent subsection (inherited field)
                 # Convert minutes to milliseconds (1 minute = 60000 ms)
-                delay_minutes = getattr(course, 'minimum_time_on_unit', 0)
+                delay_minutes = 0
+                try:
+                    parent = block.get_parent()
+                    if parent:
+                        # If parent is a subsection, use it directly
+                        if hasattr(parent, 'minimum_time_on_unit'):
+                            delay_minutes = getattr(parent, 'minimum_time_on_unit', 0)
+                        # Otherwise, if parent is a vertical/unit, get its parent (subsection)
+                        elif hasattr(parent, 'get_parent'):
+                            subsection = parent.get_parent()
+                            if subsection:
+                                delay_minutes = getattr(subsection, 'minimum_time_on_unit', 0)
+                except Exception:  # pylint: disable=broad-except
+                    delay_minutes = 0
                 student_view_context['wrap_xblock_data'] = {
                     'mark-completed-on-view-after-delay': delay_minutes * 60000
                 }
@@ -1786,8 +1800,22 @@ def render_xblock_particular(request, usage_key_string):
         if completion_service and completion_service.completion_tracking_enabled():
             if completion_service.blocks_to_mark_complete_on_view({block}):
                 enable_completion_on_view_service = True
+                # Get minimum_time_on_unit from parent subsection (inherited field)
                 # Convert minutes to milliseconds (1 minute = 60000 ms)
-                delay_minutes = getattr(course, 'minimum_time_on_unit', 0)
+                delay_minutes = 0
+                try:
+                    parent = block.get_parent()
+                    if parent:
+                        # If parent is a subsection, use it directly
+                        if hasattr(parent, 'minimum_time_on_unit'):
+                            delay_minutes = getattr(parent, 'minimum_time_on_unit', 0)
+                        # Otherwise, if parent is a vertical/unit, get its parent (subsection)
+                        elif hasattr(parent, 'get_parent'):
+                            subsection = parent.get_parent()
+                            if subsection:
+                                delay_minutes = getattr(subsection, 'minimum_time_on_unit', 0)
+                except Exception:  # pylint: disable=broad-except
+                    delay_minutes = 0
                 student_view_context['wrap_xblock_data'] = {
                     'mark-completed-on-view-after-delay': delay_minutes * 60000
                 }

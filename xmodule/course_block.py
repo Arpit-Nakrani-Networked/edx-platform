@@ -384,16 +384,6 @@ class CourseFields:  # lint-amnesty, pylint: disable=missing-class-docstring
         default=False,
         scope=Scope.settings
     )
-    minimum_time_on_unit = Integer(
-        display_name=_("Completion On View Delay (Minutes)"),
-        help=_(
-            "Enter the number of minutes a student must spend viewing content before it is automatically "
-            "marked as complete. This applies to content blocks that are marked for completion on view. "
-            "The default is 1 minute. Set to 0 to mark as complete immediately upon viewing."
-        ),
-        default=0,
-        scope=Scope.settings
-    )
     display_name = String(
         help=_("Enter the name of the course as it should appear in the course list."),
         default="Empty",
@@ -958,7 +948,7 @@ class CourseFields:  # lint-amnesty, pylint: disable=missing-class-docstring
             "subsection until learners earn a minimum score in another, "
             "prerequisite subsection."
         ),
-        default=False,
+        default=True,
         scope=Scope.settings
     )
 
