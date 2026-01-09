@@ -206,6 +206,25 @@
                     player = state.videoEl = state.videoPlayer.player.videoEl;
                     player[0].addEventListener(eventToBeTriggered, state.videoPlayer.onLoadMetadataHtml5, false);
 
+                    // Wrap HTML5 player's seekTo method to prevent forward seeking
+                    if (state.config.preventSkipVideo && state.videoPlayer.player) {
+                        var originalHtml5SeekTo = state.videoPlayer.player.seekTo;
+                        state.videoPlayer.player.seekTo = function(time) {
+                            // Only allow seeking backward or to already watched positions
+                            var maxWatched = state.videoPlayer.maxWatchedTime || 0;
+                            var current = state.videoPlayer.currentTime || 0;
+
+                            // Allow seeking backward or to positions we've already watched
+                            if (time <= current || time <= maxWatched) {
+                                console.log('[Video]: Allowing backward seek to', time);
+                                return originalHtml5SeekTo.call(this, time);
+                            } else {
+                                console.log('[Video]: Blocking forward seek attempt from', current, 'to', time);
+                                return false;
+                            }
+                        };
+                    }
+
                     // Prevent keyboard seeking when prevent_skip_video is enabled
                     if (state.config.preventSkipVideo) {
                         // Remove tabindex from video element to prevent direct keyboard focus
@@ -226,6 +245,20 @@
                                 return false;
                             }
                         }, true); // Use capture phase
+
+                        // Monitor 'seeking' event to catch direct currentTime manipulation
+                        player[0].addEventListener('seeking', function(event) {
+                            var maxWatched = state.videoPlayer.maxWatchedTime || 0;
+                            var seekingTo = player[0].currentTime;
+
+                            // If trying to seek forward beyond max watched, prevent it
+                            if (seekingTo > maxWatched + 0.3) {
+                                console.log('[Video]: Blocked HTML5 seeking event from', seekingTo, 'to', maxWatched);
+                                event.preventDefault();
+                                player[0].currentTime = maxWatched;
+                                return false;
+                            }
+                        }, true);
                     }
 
                     player.on('remove', state.videoPlayer.destroy);
@@ -250,6 +283,25 @@
                             videoHeight = player.attr('height') || player.height();
 
                         player.on('remove', state.videoPlayer.destroy);
+
+                        // Wrap YouTube player's seekTo method to prevent forward seeking
+                        if (state.config.preventSkipVideo && state.videoPlayer.player) {
+                            var originalSeekTo = state.videoPlayer.player.seekTo;
+                            state.videoPlayer.player.seekTo = function(time, allowSeekAhead) {
+                                // Only allow seeking backward or to already watched positions
+                                var maxWatched = state.videoPlayer.maxWatchedTime || 0;
+                                var current = state.videoPlayer.currentTime || 0;
+
+                                // Allow seeking backward or to positions we've already watched
+                                if (time <= current || time <= maxWatched) {
+                                    console.log('[Video]: Allowing backward seek to', time);
+                                    return originalSeekTo.call(this, time, allowSeekAhead);
+                                } else {
+                                    console.log('[Video]: Blocking forward seek attempt from', current, 'to', time);
+                                    return false;
+                                }
+                            };
+                        }
 
                         _resize(state, videoWidth, videoHeight);
                         _updateVcrAndRegion(state, true);
@@ -479,7 +531,8 @@
                         }
 
                         // If current time jumped forward beyond max watched, revert it
-                        if (this.videoPlayer.currentTime > this.videoPlayer.maxWatchedTime + 1) {
+                        // Use 0.3 second buffer to account for natural playback progression
+                        if (this.videoPlayer.currentTime > this.videoPlayer.maxWatchedTime + 0.3) {
                             console.log('[Video]: Detected forward seek attempt, reverting from',
                                 this.videoPlayer.currentTime, 'to', this.videoPlayer.maxWatchedTime);
                             this.videoPlayer.seekTo(this.videoPlayer.maxWatchedTime);
