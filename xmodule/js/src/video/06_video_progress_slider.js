@@ -107,11 +107,12 @@ mind, or whether to act, and in acting, to live."
                     'aria-label': gettext('Video position. Press space to toggle playback')
                 });
 
-                // Block keyboard seeking on the slider handle when prevent_skip_video is enabled
+                // When prevent_skip_video is enabled, block keyboard seeking on slider
+                // Mouse clicks are handled by onSlide/onStop functions
                 if (state.config.preventSkipVideo) {
                     var blockSliderKeys = function(event) {
-                        // Block ALL seeking keys: Left (37), Right (39), Up (38), Down (40),
-                        // Page Up (33), Page Down (34), Home (36), End (35), Space (32)
+                        // Block ALL keys on the slider to prevent seeking
+                        // jQuery UI slider responds to arrow keys, page up/down, home/end
                         if (event.keyCode === 37 || event.keyCode === 39 ||
                             event.keyCode === 38 || event.keyCode === 40 ||
                             event.keyCode === 33 || event.keyCode === 34 ||
@@ -119,29 +120,25 @@ mind, or whether to act, and in acting, to live."
                             event.preventDefault();
                             event.stopPropagation();
                             event.stopImmediatePropagation();
-                            console.log('[Slider]: Blocked key code ' + event.keyCode);
                             return false;
                         }
                     };
 
-                    // Completely disable slider interactions
-                    state.videoProgressSlider.el.css('pointer-events', 'none');
-                    state.videoProgressSlider.handle.css('pointer-events', 'none');
+                    // Make slider handle completely unfocusable to prevent keyboard navigation
+                    state.videoProgressSlider.handle.attr('tabindex', '-1');
+                    state.videoProgressSlider.el.attr('tabindex', '-1');
 
-                    // Use native addEventListener with capture phase to intercept BEFORE jQuery UI
-                    // This ensures we catch keyboard events before the slider can process them
+                    // Block keyboard events at multiple levels
                     state.videoProgressSlider.el[0].addEventListener('keydown', blockSliderKeys, true);
                     state.videoProgressSlider.handle[0].addEventListener('keydown', blockSliderKeys, true);
-
-                    // Also block in bubbling phase as backup
-                    state.videoProgressSlider.el.on('keydown', blockSliderKeys);
-                    state.videoProgressSlider.handle.on('keydown', blockSliderKeys);
-
-                    // Block keyup and keypress too
                     state.videoProgressSlider.el[0].addEventListener('keyup', blockSliderKeys, true);
                     state.videoProgressSlider.handle[0].addEventListener('keyup', blockSliderKeys, true);
                     state.videoProgressSlider.el[0].addEventListener('keypress', blockSliderKeys, true);
                     state.videoProgressSlider.handle[0].addEventListener('keypress', blockSliderKeys, true);
+
+                    // Also block at jQuery level
+                    state.videoProgressSlider.el.on('keydown keyup keypress', blockSliderKeys);
+                    state.videoProgressSlider.handle.on('keydown keyup keypress', blockSliderKeys);
                 }
             }
 
@@ -167,9 +164,10 @@ mind, or whether to act, and in acting, to live."
                         max: this.config.endTime,
                         slide: this.videoProgressSlider.onSlide,
                         stop: this.videoProgressSlider.onStop,
-                        step: 5,
-                        // Disable slider if prevent_skip_video is enabled
-                        disabled: this.config.preventSkipVideo
+                        step: 5
+                        // Don't disable the slider - we need it to update as video plays
+                        // Interaction is prevented via CSS (pointer-events: none) and
+                        // the onSlide/onStop handlers that block seeking
                     });
 
                 this.videoProgressSlider.sliderProgress = this.videoProgressSlider

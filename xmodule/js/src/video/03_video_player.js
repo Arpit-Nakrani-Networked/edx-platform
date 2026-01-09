@@ -143,11 +143,12 @@
                     cc_load_policy: 0
                 };
 
-                // When prevent_skip_video is enabled, completely lock down YouTube player
+                // When prevent_skip_video is enabled, disable YouTube native controls
+                // but allow OpenEdX custom controls to work
                 if (state.config.preventSkipVideo) {
-                    state.videoPlayer.playerVars.controls = 0;      // Force no controls
-                    state.videoPlayer.playerVars.disablekb = 1;     // Disable keyboard
-                    state.videoPlayer.playerVars.fs = 0;            // Disable fullscreen
+                    state.videoPlayer.playerVars.controls = 0;      // Use OpenEdX controls instead
+                    state.videoPlayer.playerVars.disablekb = 1;     // Disable YouTube keyboard shortcuts
+                    state.videoPlayer.playerVars.fs = 0;            // Disable fullscreen button
                     state.videoPlayer.playerVars.iv_load_policy = 3; // Disable annotations
                     state.videoPlayer.playerVars.modestbranding = 1; // Minimal branding
                     state.videoPlayer.playerVars.playsinline = 1;   // Force inline playback
@@ -210,10 +211,11 @@
                         // Remove tabindex from video element to prevent direct keyboard focus
                         player.attr('tabindex', '-1');
 
-                        // Prevent keyboard events on video element
+                        // Prevent ONLY seeking keys on video element, allow play/pause
                         player[0].addEventListener('keydown', function(event) {
-                            // Block ALL seeking keys: Left (37), Right (39), Up (38), Down (40),
+                            // Block seeking keys: Left (37), Right (39), Up (38), Down (40),
                             // Page Up (33), Page Down (34), Home (36), End (35)
+                            // Allow: Spacebar (32), K (75) for play/pause
                             if (event.keyCode === 37 || event.keyCode === 39 ||
                                 event.keyCode === 38 || event.keyCode === 40 ||
                                 event.keyCode === 33 || event.keyCode === 34 ||
@@ -241,24 +243,6 @@
                         }
                     });
 
-                    // For prevent_skip_video, add CSS to completely hide YouTube controls
-                    if (state.config.preventSkipVideo) {
-                        state.el.on('initialize', function() {
-                            var iframe = state.el.find('iframe');
-                            iframe.css({
-                                'pointer-events': 'none',
-                                'user-select': 'none',
-                                '-webkit-user-select': 'none',
-                                '-moz-user-select': 'none',
-                                '-ms-user-select': 'none'
-                            });
-                            // Add a style tag to hide YouTube's UI elements
-                            var style = document.createElement('style');
-                            // style.textContent = '.video-controls-disabled iframe { pointer-events: none !important; }';
-                            document.head.appendChild(style);
-                        });
-                    }
-
                     state.el.on('initialize', function() {
                         // eslint-disable-next-line no-shadow, no-multi-assign
                         var player = state.videoEl = state.el.find('iframe'),
@@ -272,39 +256,47 @@
                     });
                 }
 
-                // Add global keyboard event prevention for the video container
+                // Prevent keyboard seeking when prevent_skip_video is enabled
+                // BUT allow play/pause (spacebar, K key)
                 if (state.config.preventSkipVideo) {
-                    // Prevent keyboard seeking at multiple levels
-                    var preventAllSeekKeys = function(event) {
-                        // Block ALL seeking keys: Left (37), Right (39), Up (38), Down (40),
+                    var preventSeekKeys = function(event) {
+                        // Block ONLY seeking keys, NOT play/pause keys
+                        // Blocked: Left (37), Right (39), Up (38), Down (40),
                         // Page Up (33), Page Down (34), Home (36), End (35)
-                        if (event.keyCode === 37 || event.keyCode === 39 ||
+                        // J (74), L (76) - YouTube seek shortcuts
+                        // Number keys (48-57, 96-105) - YouTube jump to percentage
+                        // Allowed: Spacebar (32), K (75) for play/pause, M (77) for mute
+                        var isSeekKey = event.keyCode === 37 || event.keyCode === 39 ||
                             event.keyCode === 38 || event.keyCode === 40 ||
                             event.keyCode === 33 || event.keyCode === 34 ||
-                            event.keyCode === 36 || event.keyCode === 35) {
+                            event.keyCode === 36 || event.keyCode === 35 ||
+                            event.keyCode === 74 || event.keyCode === 76 || // J, L
+                            (event.keyCode >= 48 && event.keyCode <= 57) || // 0-9
+                            (event.keyCode >= 96 && event.keyCode <= 105); // Numpad 0-9
+
+                        if (isSeekKey) {
                             event.preventDefault();
                             event.stopPropagation();
                             event.stopImmediatePropagation();
-                            console.log('[Video]: Keyboard seeking blocked (key code: ' + event.keyCode + ')');
                             return false;
                         }
                     };
 
-                    // Attach to video container
-                    state.el.on('keydown', preventAllSeekKeys);
+                    // Attach to video container with capture phase to intercept before YouTube
+                    state.el[0].addEventListener('keydown', preventSeekKeys, true);
 
-                    // Also attach to document when video has focus
-                    state.el.on('focus focusin', function() {
-                        $(document).on('keydown.preventVideoSkip', preventAllSeekKeys);
-                    });
-
-                    state.el.on('blur focusout', function() {
-                        $(document).off('keydown.preventVideoSkip');
+                    // Also attach to document level to catch ALL keyboard events
+                    $(document).on('keydown.preventVideoSkip', function(event) {
+                        // Only block if video player is visible and initialized
+                        if (state.el.is(':visible') && state.el.hasClass('is-initialized')) {
+                            preventSeekKeys(event);
+                        }
                     });
 
                     // Cleanup on destroy
                     state.el.on('destroy', function() {
                         $(document).off('keydown.preventVideoSkip');
+                        state.el[0].removeEventListener('keydown', preventSeekKeys, true);
                     });
                 }
 

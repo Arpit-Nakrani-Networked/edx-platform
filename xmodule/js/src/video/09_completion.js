@@ -248,25 +248,13 @@
                 // Calculate remaining delay: if already spent minimum time, delay is 0
                 // Otherwise, delay is (minimum_time - time_already_spent)
                 remainingDelayMs = Math.max(0, this.minimumViewingTimeMs - timeSpentMs);
-
-                // Log that criteria is met with detailed info
-                /* eslint-disable no-console */
-                console.log('=== VIDEO COMPLETION CRITERIA MET ===');
-                console.log('Currently viewing: ' + this.isCurrentlyViewing);
-                console.log('Total viewing time accumulated: ' + (this.totalViewingTimeMs / 1000).toFixed(1) + 's');
-                console.log('Current session time: ' + (this.isCurrentlyViewing ? ((Date.now() - this.viewingStartedAt) / 1000).toFixed(1) : 0) + 's');
-                console.log('Total time spent watching: ' + (timeSpentMs / 1000).toFixed(1) + ' seconds');
-                console.log('Minimum viewing time required: ' + (this.minimumViewingTimeMs / 1000) + ' seconds');
-                console.log('Remaining delay before submission: ' + (remainingDelayMs / 1000).toFixed(1) + ' seconds');
-                console.log('======================================');
-                /* eslint-enable no-console */
-
-                // If remaining delay is 0, log that we're submitting immediately
-                if (remainingDelayMs > 0) {
+    
+                // If remaining delay is 0, we can submit immediately
+                // If remaining delay > 0, we need to wait before submitting
+                if (remainingDelayMs === 0) {
                     /* eslint-disable no-console */
                     console.log('Submitting immediately - minimum viewing time already met!');
                     /* eslint-enable no-console */
-                    return;
                 }
 
                 const completionSubmit = () => {
@@ -316,11 +304,21 @@
              */
             /**
              * Calculates the time (in seconds from the start) after which the video is considered complete.
+             * - If preventSkipVideo is enabled, requires watching to completionPercentage of the video
              * - If the video duration is less than the minimum viewing time, completeAfterTime is the end of the video.
              * - Otherwise, completeAfterTime is startTime + minimum viewing time (in seconds).
              */
             calculateCompleteAfterTime: function(startTime, endTime) {
                 var duration = endTime - startTime;
+
+                // When preventSkipVideo is enabled, use completionPercentage (typically 100%)
+                // to determine when video is complete
+                if (this.state.config.preventSkipVideo) {
+                    var requiredTime = startTime + (duration * this.completionPercentage);
+                    return requiredTime;
+                }
+
+                // Normal mode: use minimum viewing time
                 var minTimeSec = this.minimumViewingTimeMs / 1000;
                 if (duration < minTimeSec) {
                     return endTime;

@@ -91,9 +91,7 @@
                     autoAdvanceEnabled = el.data('autoadvance-enabled') === 'True',
                     metadata = el.data('metadata'),
                     preventSkipVideo = metadata.preventSkipVideo || false,
-                    mainVideoModules = preventSkipVideo ? [
-                        VideoSaveStatePlugin, VideoEventsPlugin, VideoCompletionHandler
-                    ] : [
+                    mainVideoModules = [
                         FocusGrabber, VideoControl, VideoPlayPlaceholder,
                         VideoPlayPauseControl, VideoProgressSlider, VideoSpeedControl,
                         VideoVolumeControl, VideoQualityControl, VideoFullScreen, VideoCaption, VideoCommands,
