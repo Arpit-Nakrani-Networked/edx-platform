@@ -123,6 +123,53 @@ ${HTML(fragment.foot_html())}
       background-clip:unset;
       box-shadow: none !important;
     }
+
+    /* SCORM iframe individual loader styles */
+    .scorm-iframe-wrapper {
+      position: relative;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .scorm-iframe-loader {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(255, 255, 255, 0.95);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    .scorm-iframe-loader.hidden {
+      display: none;
+    }
+
+    .scorm-loader-spinner {
+      border:  0.25em solid #0D68F9;
+      border-top: 0.25em solid #f3f3f3;
+      border-radius: 50%;
+      width: 35px;  
+      height: 35px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .scorm-loader-text {
+      margin-top: 20px;
+      font-size: 16px;
+      color: #333;
+      font-weight: 500;
+    }
   </style>
 
 <%block name="body_extra"/>
@@ -161,6 +208,213 @@ ${HTML(fragment.foot_html())}
     <%include file="/edxnotes/toggle_notes.html" args="course=course, block=block"/>
   % endif
 % endif
+
+<script type="text/javascript">
+  (function() {
+    // Individual SCORM iframe loader functionality
+    var mainContent = document.getElementById('main');
+    var processedIframes = new WeakSet();
+    var maxScormCheckAttempts = 20; // Check up to 10 seconds (20 * 500ms)
+
+    // Create loader overlay for a specific iframe
+    function createLoaderForIframe(scormIframe) {
+      // Create wrapper if it doesn't exist
+      var wrapper = scormIframe.parentElement;
+      if (!wrapper.classList.contains('scorm-iframe-wrapper')) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'scorm-iframe-wrapper';
+        scormIframe.parentNode.insertBefore(wrapper, scormIframe);
+        wrapper.appendChild(scormIframe);
+      }
+
+      // Create loader overlay
+      var loader = document.createElement('div');
+      loader.className = 'scorm-iframe-loader';
+      loader.innerHTML = '<div class="scorm-loader-spinner"></div><p class="scorm-loader-text">Loading SCORM content...</p>';
+
+      wrapper.appendChild(loader);
+
+      console.log('[SCORM Loader] Created loader for iframe');
+      return loader;
+    }
+
+    // Hide loader for specific iframe
+    function hideLoaderForIframe(loader) {
+      if (loader) {
+        loader.classList.add('hidden');
+        console.log('[SCORM Loader] Hiding loader for iframe');
+      }
+    }
+
+    // Check if SCORM iframe content is actually loaded
+    function isScormContentReady(scormIframe) {
+      try {
+        var scormDoc = scormIframe.contentDocument || scormIframe.contentWindow.document;
+        if (!scormDoc) return false;
+
+        // Check if SCORM content has actual body content
+        var body = scormDoc.body;
+        if (!body) return false;
+
+        // Check if body has meaningful content (not just empty/loading)
+        var hasContent = body.children.length > 0 &&
+                        body.innerHTML.trim().length > 0 &&
+                        scormDoc.readyState === 'complete';
+
+        return hasContent;
+      } catch (e) {
+        // Cross-origin iframe
+        return true; // Assume ready if we can't check
+      }
+    }
+
+    // Monitor SCORM iframe until content is ready
+    function waitForScormContent(scormIframe, loader, callback) {
+      var attempts = 0;
+      var checkInterval = setInterval(function() {
+        attempts++;
+        console.log('[SCORM Loader] Checking SCORM content readiness, attempt:', attempts);
+
+        if (isScormContentReady(scormIframe)) {
+          console.log('[SCORM Loader] SCORM content is ready');
+          clearInterval(checkInterval);
+          callback();
+        } else if (attempts >= maxScormCheckAttempts) {
+          console.log('[SCORM Loader] Max attempts reached, proceeding anyway');
+          clearInterval(checkInterval);
+          callback();
+        }
+      }, 500); // Check every 500ms
+
+      // Also listen for load event as backup
+      var loadHandler = function() {
+        setTimeout(function() {
+          if (isScormContentReady(scormIframe)) {
+            clearInterval(checkInterval);
+            callback();
+          }
+        }, 1000); // Wait 1 second after load event
+      };
+
+      scormIframe.addEventListener('load', loadHandler);
+
+      // Ultimate fallback for this specific iframe
+      setTimeout(function() {
+        console.log('[SCORM Loader] Maximum wait time reached for this iframe');
+        clearInterval(checkInterval);
+        callback();
+      }, 45000);
+    }
+
+    // Setup loader for a single SCORM iframe
+    function setupScormIframeLoader(scormIframe, index) {
+      if (processedIframes.has(scormIframe)) {
+        console.log('[SCORM Loader] Iframe', index, 'already processed, skipping');
+        return;
+      }
+
+      processedIframes.add(scormIframe);
+      console.log('[SCORM Loader] Setting up loader for SCORM iframe', index);
+
+      // Create loader overlay
+      var loader = createLoaderForIframe(scormIframe);
+
+      // Function to hide this iframe's loader
+      function hideThisLoader() {
+        setTimeout(function() {
+          hideLoaderForIframe(loader);
+        }, 1000); // Small delay to ensure content is visible
+      }
+
+      // If iframe is already loaded
+      if (scormIframe.contentDocument && scormIframe.contentDocument.readyState === 'complete') {
+        console.log('[SCORM Loader] SCORM iframe', index, 'already loaded, checking content');
+        waitForScormContent(scormIframe, loader, hideThisLoader);
+      } else {
+        // Wait for iframe to load
+        var hasLoaded = false;
+
+        scormIframe.addEventListener('load', function() {
+          if (hasLoaded) return;
+          hasLoaded = true;
+
+          console.log('[SCORM Loader] SCORM iframe', index, 'load event fired');
+          waitForScormContent(scormIframe, loader, hideThisLoader);
+        });
+
+        // Fallback timeout in case load event doesn't fire quickly
+        setTimeout(function() {
+          if (!hasLoaded) {
+            console.log('[SCORM Loader] Fallback triggered for SCORM iframe', index);
+            hasLoaded = true;
+
+            try {
+              if (scormIframe.contentDocument) {
+                waitForScormContent(scormIframe, loader, hideThisLoader);
+              } else {
+                hideThisLoader();
+              }
+            } catch (e) {
+              hideThisLoader();
+            }
+          }
+        }, 2500);
+      }
+    }
+
+    // Check for SCORM iframes and setup loaders
+    function checkForScormIframes() {
+      var scormIframes = mainContent.querySelectorAll('iframe.scorm-embedded');
+      console.log('[SCORM Loader] Found SCORM iframes:', scormIframes.length);
+
+      scormIframes.forEach(function(scormIframe, index) {
+        setupScormIframeLoader(scormIframe, index);
+      });
+    }
+
+    // Observe for dynamically added SCORM iframes
+    var observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        if (mutation.addedNodes.length > 0) {
+          mutation.addedNodes.forEach(function(node) {
+            if (node.tagName === 'IFRAME' && node.classList && node.classList.contains('scorm-embedded')) {
+              console.log('[SCORM Loader] New SCORM iframe detected');
+              setupScormIframeLoader(node, 'dynamic');
+            } else if (node.querySelectorAll) {
+              var newScormIframes = node.querySelectorAll('iframe.scorm-embedded');
+              if (newScormIframes.length > 0) {
+                console.log('[SCORM Loader] New SCORM iframes detected in added node');
+                newScormIframes.forEach(function(iframe, index) {
+                  setupScormIframeLoader(iframe, 'dynamic-' + index);
+                });
+              }
+            }
+          });
+        }
+      });
+    });
+
+    // Start observing
+    if (mainContent) {
+      observer.observe(mainContent, {
+        childList: true,
+        subtree: true
+      });
+    }
+
+    // Run when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', checkForScormIframes);
+    } else {
+      checkForScormIframes();
+    }
+
+    // Also check after delays to catch dynamically added iframes
+    setTimeout(checkForScormIframes, 100);
+    setTimeout(checkForScormIframes, 500);
+    setTimeout(checkForScormIframes, 1000);
+  }());
+</script>
 
 % if is_learning_mfe:
 <script type="text/javascript">
