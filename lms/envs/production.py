@@ -630,6 +630,11 @@ AUTH_PASSWORD_VALIDATORS = ENV_TOKENS.get("AUTH_PASSWORD_VALIDATORS", AUTH_PASSW
 ### INACTIVITY SETTINGS ####
 SESSION_INACTIVITY_TIMEOUT_IN_SECONDS = AUTH_TOKENS.get("SESSION_INACTIVITY_TIMEOUT_IN_SECONDS")
 
+### COOKIE EXPIRATION SETTINGS - ALL COOKIES EXPIRE IN 90 DAYS ####
+SESSION_COOKIE_AGE = 90 * 24 * 60 * 60  # Session cookie expires in 90 days (7,776,000 seconds)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Don't expire immediately on browser close, use SESSION_COOKIE_AGE instead
+CSRF_COOKIE_AGE = 90 * 24 * 60 * 60  # CSRF cookie expires in 90 days (7,776,000 seconds)
+
 ##### LMS DEADLINE DISPLAY TIME_ZONE #######
 TIME_ZONE_DISPLAYED_FOR_DEADLINES = ENV_TOKENS.get("TIME_ZONE_DISPLAYED_FOR_DEADLINES",
                                                    TIME_ZONE_DISPLAYED_FOR_DEADLINES)
@@ -826,6 +831,11 @@ LTI_AGGREGATE_SCORE_PASSBACK_DELAY = ENV_TOKENS.get(
 #### JWT configuration ####
 JWT_AUTH.update(ENV_TOKENS.get('JWT_AUTH', {}))
 JWT_AUTH.update(AUTH_TOKENS.get('JWT_AUTH', {}))
+
+# Override JWT and OAuth token expiration - ALL EXPIRE IN 90 DAYS
+JWT_AUTH['JWT_EXPIRATION'] = 90 * 24 * 60 * 60  # JWT token expires in 90 days (7,776,000 seconds)
+JWT_AUTH['JWT_IN_COOKIE_EXPIRATION'] = 90 * 24 * 60 * 60  # JWT cookie expires in 90 days (7,776,000 seconds)
+OAUTH_ID_TOKEN_EXPIRATION = 90 * 24 * 60 * 60  # OAuth ID token expires in 90 days (7,776,000 seconds)
 
 # Offset for pk of courseware.StudentModuleHistoryExtended
 STUDENTMODULEHISTORYEXTENDED_OFFSET = ENV_TOKENS.get(
