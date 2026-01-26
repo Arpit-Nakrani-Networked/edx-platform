@@ -432,6 +432,37 @@ def _check_user_auth_flow(site, user):
                 }
             )
 
+def _build_redirect_url(request,course_id, next_page):
+    origin = request.get_host()
+
+    if not origin:
+        base = "https://apps.courses.networked.co"
+    elif "lab" in origin:
+        base = "https://apps.lms.lab.networked.co"
+    elif "qa" in origin or "local" in origin:
+        base = "https://apps.courses.qa.networked.co"
+    else:
+        base = "https://apps.courses.networked.co"
+
+    learning_base = f'{base}/learning'
+    authoring_base = f'{base}/authoring'
+
+    authoring_routes = {
+        "add-lesson": "",
+        "edit-lesson": "",
+        "student-overview": "/settings/student-overview",
+        "score-board": "/settings/score-board",
+        "grading": "/settings/grading",
+    }
+
+    if next_page in authoring_routes:
+        return f"{authoring_base}/course/{course_id}{authoring_routes[next_page]}"
+
+    if next_page in ("resume-course", "start-course"):
+        return f"{learning_base}/course/{course_id}"
+
+    return f"{learning_base}/course/{course_id}/home"
+
 
 @login_required
 @require_http_methods(['GET'])
@@ -753,6 +784,143 @@ def common_redirect_to_login(request,userid):
         return HttpResponse(f"Error during API request: {e}", status=500)
     except ValueError:
         return HttpResponse("Invalid JSON response", status=500)
+
+@require_http_methods(["GET"])
+def networked_login(request,courseid):
+    print('--- networked_login called ---')
+    """
+    Handle networked login with token authentication and redirect.
+
+    Expected URL:
+    /auth/networked-login?token=<token>&redirect=<url>
+
+    Args:
+        request: HTTP request with token and redirect parameters
+
+    Returns:
+        HttpResponse: HTML with cookies set and redirect to specified URL
+    """
+    try:
+        # Get parameters from URL
+        token = request.GET.get("token")
+        communityId = request.GET.get("communityId")
+        next_page = request.GET.get("nextPage", "")
+
+        if not token:
+            return HttpResponse("Missing token parameter", status=400)
+        if not communityId:
+            return HttpResponse("Missing communityId parameter", status=400)
+
+        # Determine backend URL based on request origin
+        origin = request.get_host()
+
+        if not origin:
+            base_url = "https://backend.networked.co"
+        elif "lab" in origin:
+            base_url = "https://backend.lab.networked.co"
+        elif "qa" in origin or "local" in origin:
+            base_url = "https://backend.qa.networked.co"
+        else:
+            base_url = "https://backend.networked.co"
+
+        print(f"Determined base_url: {base_url} from origin: {origin}")
+        # Call networked backend API
+        response = requests.get(
+            f"{base_url}/api/v1/auth/openedx-login/data?tokenId={token}&communityId={communityId}",
+            timeout=10,
+        )
+        # response.raise_for_status()
+        data = response.json()
+        data = data.get("data", {})
+        print("Received data from backend:")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+
+        community = data.get("community", {})
+        openedx_data = data.get("openedx", {})
+        user_data = data.get("user", {})
+        community_details = data.get("communityDetails", {})
+
+        community_id = community_details.get("communityId", communityId)
+
+        # Decode redirect URL
+        redirect_url = _build_redirect_url(request,courseid, next_page)
+
+        openedx_cookies = openedx_data.get("cookies", {})
+
+        extra_cookies = {
+            "communityToken": community.get("token"),
+            "communityId": community_id,
+            "tokenId": token,
+            "sessionToken": data.get("sessionToken"),
+        }
+
+        # Merge (Python 3.9+)
+        all_cookies = {
+            **openedx_cookies,
+            **{k: v for k, v in extra_cookies.items() if v is not None}
+        }
+
+
+        # Generate JS to set cookies
+        cookie_js_lines = "\n".join(
+            [
+                f'document.cookie = "{key}=" + {json.dumps(value)} + "; path=/; max-age=1209600; SameSite=Lax";'
+                for key, value in all_cookies.items()
+            ]
+        )
+
+
+        local_storage_js = f"""
+            if ({json.dumps(community_id)}) {{
+                localStorage.setItem(
+                    "selected_community",
+                    {json.dumps(community_id)}
+                );
+            }}
+
+            if ({json.dumps(user_data)}) {{
+                localStorage.setItem(
+                    "user",
+                    JSON.stringify({json.dumps(user_data)})
+                );
+            }}
+
+        """
+        cookie_js_lines += local_storage_js                                                                         
+
+
+        # HTML response with cookie setting + redirect
+        html = f"""
+        <html>
+            <head>
+                <script>
+                    // Set all cookies
+                    {cookie_js_lines}
+
+                    // Redirect to target page
+                    window.location.href = "{redirect_url}";
+                </script>
+            </head>
+            <body>
+                Redirecting...
+            </body>
+        </html>
+        """
+
+        # return HttpResponse(f"during API request: worked {base_url} : community_id : {all_cookies} : redirect_url : {redirect_url}", status=200)
+        return HttpResponse(html, content_type="text/html")
+
+    except requests.RequestException as e:
+        AUDIT_LOG.error(f"Networked login failed - API request error: {e}")
+        return HttpResponse("Error during API request", status=500)
+
+    except ValueError as e:
+        AUDIT_LOG.error(f"Networked login failed - Invalid JSON response: {e}")
+        return HttpResponse("Invalid JSON response", status=500)
+
+    except Exception as e:
+        AUDIT_LOG.error(f"Networked login failed - Unexpected error: {e}")
+        return HttpResponse(f"An unexpected error occurred : {e}", status=500)
 
 # CSRF protection is not needed here because the only side effect
 # of this endpoint is to refresh the cookie-based JWT, and attempting
