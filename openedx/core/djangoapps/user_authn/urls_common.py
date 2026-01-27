@@ -57,7 +57,7 @@ urlpatterns = [
             name="user_api_login_session_legacy"),
 
      # path('common-redirection/<str:userid>', login.common_redirect_to_login, name="common_redirect_to_login"),
-    path('common-redirection/<str:courseid>', login.networked_login, name="networked_login"),
+    path('auth/networked-login/<str:courseid>', login.networked_login, name="networked_login"),
     path('api/user/v1/account/role/<str:email>', user_role.user_role_change_handle, name="user_api_role_change"),
     
     # Login Refresh of JWT Cookies
