@@ -860,14 +860,48 @@ def networked_login(request,courseid):
             **{k: v for k, v in extra_cookies.items() if v is not None}
         }
 
+        domain_helper_js = """
+            function getParentDomain() {
+                const parts = window.location.hostname.split('.');
+                const idx = parts.indexOf('networked');
+
+                if (idx === -1) {
+                    return '.' + parts.slice(-2).join('.');
+                }
+
+                const ignore = ['apps', 'courses', 'www'];
+                const candidate = parts[idx - 1];
+
+                if (candidate && !ignore.includes(candidate)) {
+                    return '.' + candidate + '.networked.co';
+                }
+
+                return '.networked.co';
+            }
+
+            const parentDomain = getParentDomain();
+        """
+
+
 
         # Generate JS to set cookies
-        cookie_js_lines = "\n".join(
-            [
-                f'document.cookie = "{key}=" + {json.dumps(value)} + "; path=/; max-age=1209600; SameSite=Lax";'
-                for key, value in all_cookies.items()
-            ]
-        )
+        cookie_js_lines = []
+
+        # Open edX cookies (host-only)
+        for key, value in openedx_cookies.items():
+            cookie_js_lines.append(
+                f'document.cookie = "{key}=" + {json.dumps(value)} + '
+                f'"; path=/; max-age=1209600; SameSite=Lax";'
+            )
+
+        # Extra cookies (shared env domain)
+        for key, value in extra_cookies.items():
+            if value is not None:
+                cookie_js_lines.append(
+                    f'document.cookie = "{key}=" + {json.dumps(value)} + '
+                    f'"; path=/; domain=" + parentDomain + "; max-age=1209600; SameSite=Lax";'
+                )
+
 
 
         local_storage_js = f"""
@@ -886,7 +920,6 @@ def networked_login(request,courseid):
             }}
 
         """
-        cookie_js_lines += local_storage_js                                                                         
 
 
         # HTML response with cookie setting + redirect
@@ -894,8 +927,13 @@ def networked_login(request,courseid):
         <html>
             <head>
                 <script>
-                    // Set all cookies
-                    {cookie_js_lines}
+                    {domain_helper_js}
+
+                    // Set cookies
+                    {"".join(cookie_js_lines)}
+
+                    // Local storage
+                    {local_storage_js}
 
                     // Redirect to target page
                     window.location.href = "{redirect_url}";
