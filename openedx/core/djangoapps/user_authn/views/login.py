@@ -446,23 +446,32 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
         list: List of JavaScript cookie-setting statements
     """
     cookie_js_lines = []
-    
+
     # Open edX cookies (host-only)
     for key, value in openedx_cookies.items():
         cookie_js_lines.append(
             f'document.cookie = "{key}=" + {json.dumps(value)} + '
             f'"; path=/; max-age=1209600; SameSite=Lax";'
         )
-    
-    # Extra cookies (shared env domain) - skip if mobile
-    if is_mobile:
-        for key, value in extra_cookies.items():
+
+    # Always set openedxCommunityId (even on mobile)
+    community_id = extra_cookies.get("openedxCommunityId")
+    if community_id is not None:
+        cookie_js_lines.append(
+            f'document.cookie = "openedxCommunityId=" + {json.dumps(community_id)} + '
+            f'"; path=/; domain=" + parentDomain + "; max-age=1209600; SameSite=Lax";'
+        )
+
+    # Set remaining extra cookies ONLY for web
+    if not is_mobile:
+        for key in ("tokenId", "sessionToken"):
+            value = extra_cookies.get(key)
             if value is not None:
                 cookie_js_lines.append(
                     f'document.cookie = "{key}=" + {json.dumps(value)} + '
                     f'"; path=/; domain=" + parentDomain + "; max-age=1209600; SameSite=Lax";'
                 )
-    
+
     return cookie_js_lines
 
 def _build_redirect_url(request,course_id, next_page):
