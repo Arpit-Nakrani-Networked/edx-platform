@@ -432,6 +432,39 @@ def _check_user_auth_flow(site, user):
                 }
             )
 
+
+def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
+    """
+    Generate JavaScript lines to set cookies.
+    
+    Args:
+        openedx_cookies (dict): Dictionary of Open edX cookies (host-only)
+        extra_cookies (dict): Dictionary of extra cookies (shared env domain)
+        is_mobile (bool): If True, skip setting extra cookies with shared domain
+    
+    Returns:
+        list: List of JavaScript cookie-setting statements
+    """
+    cookie_js_lines = []
+    
+    # Open edX cookies (host-only)
+    for key, value in openedx_cookies.items():
+        cookie_js_lines.append(
+            f'document.cookie = "{key}=" + {json.dumps(value)} + '
+            f'"; path=/; max-age=1209600; SameSite=Lax";'
+        )
+    
+    # Extra cookies (shared env domain) - skip if mobile
+    if not is_mobile:
+        for key, value in extra_cookies.items():
+            if value is not None:
+                cookie_js_lines.append(
+                    f'document.cookie = "{key}=" + {json.dumps(value)} + '
+                    f'"; path=/; domain=" + parentDomain + "; max-age=1209600; SameSite=Lax";'
+                )
+    
+    return cookie_js_lines
+
 def _build_redirect_url(request,course_id, next_page):
     origin = request.get_host()
 
@@ -792,10 +825,10 @@ def networked_login(request,courseid):
     Handle networked login with token authentication and redirect.
 
     Expected URL:
-    /auth/networked-login?token=<token>&redirect=<url>
+    /auth/networked-login?token=<token>&nextPage=<url>
 
     Args:
-        request: HTTP request with token and redirect parameters
+        request: HTTP request with token and nextPage parameters
 
     Returns:
         HttpResponse: HTML with cookies set and redirect to specified URL
@@ -883,24 +916,11 @@ def networked_login(request,courseid):
         """
 
 
-
+        # Check if this is a mobile request
+        is_mobile = request.GET.get('isMobile', 'false').lower() == 'true'
+        
         # Generate JS to set cookies
-        cookie_js_lines = []
-
-        # Open edX cookies (host-only)
-        for key, value in openedx_cookies.items():
-            cookie_js_lines.append(
-                f'document.cookie = "{key}=" + {json.dumps(value)} + '
-                f'"; path=/; max-age=1209600; SameSite=Lax";'
-            )
-
-        # Extra cookies (shared env domain)
-        for key, value in extra_cookies.items():
-            if value is not None:
-                cookie_js_lines.append(
-                    f'document.cookie = "{key}=" + {json.dumps(value)} + '
-                    f'"; path=/; domain=" + parentDomain + "; max-age=1209600; SameSite=Lax";'
-                )
+        cookie_js_lines = _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=is_mobile)
 
 
 
@@ -928,6 +948,26 @@ def networked_login(request,courseid):
             <head>
                 <script>
                     {domain_helper_js}
+
+                    // Clear old cookies before setting new ones
+                    function clearOldCookies(isMobile) {{
+                        const cookies = document.cookie.split(";");
+                        for (let cookie of cookies) {{
+                            const eqPos = cookie.indexOf("=");
+                            const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+                            if (name) {{
+                                // Clear with default domain
+                                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax";
+                                // Clear with parent domain - only when isMobile is true
+                                if (isMobile) {{
+                                    document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=" + parentDomain + ";path=/;SameSite=Lax";
+                                }}
+                            }}
+                        }}
+                    }}
+
+                    // Clear old cookies
+                    clearOldCookies({json.dumps(is_mobile)});
 
                     // Set cookies
                     {"".join(cookie_js_lines)}
