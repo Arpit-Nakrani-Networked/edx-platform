@@ -463,7 +463,7 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
         )
 
     # Set remaining extra cookies ONLY for web
-    if not is_mobile:
+    if is_mobile:
         for key in ("tokenId", "sessionToken"):
             value = extra_cookies.get(key)
             if value is not None:
