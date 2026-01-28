@@ -455,7 +455,7 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
         )
     
     # Extra cookies (shared env domain) - skip if mobile
-    if not is_mobile:
+    if is_mobile:
         for key, value in extra_cookies.items():
             if value is not None:
                 cookie_js_lines.append(
@@ -881,8 +881,7 @@ def networked_login(request,courseid):
         openedx_cookies = openedx_data.get("cookies", {})
 
         extra_cookies = {
-            "communityToken": community.get("token"),
-            "communityId": community_id,
+            "openedxCommunityId": community_id,
             "tokenId": token,
             "sessionToken": data.get("sessionToken"),
         }
