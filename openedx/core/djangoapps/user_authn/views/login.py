@@ -440,7 +440,7 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
     Args:
         openedx_cookies (dict): Dictionary of Open edX cookies (host-only)
         extra_cookies (dict): Dictionary of extra cookies (shared env domain)
-        is_mobile (bool): If True, skip setting extra cookies with shared domain
+        is_mobile (bool): If True, set tokenId and sessionToken cookies
     
     Returns:
         list: List of JavaScript cookie-setting statements
@@ -454,7 +454,7 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
             f'"; path=/; max-age=1209600; SameSite=Lax";'
         )
 
-    # Always set openedxCommunityId (even on mobile)
+    # Always set openedxCommunityId (both mobile and web)
     community_id = extra_cookies.get("openedxCommunityId")
     if community_id is not None:
         cookie_js_lines.append(
@@ -462,7 +462,7 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
             f'"; path=/; domain=" + parentDomain + "; max-age=1209600; SameSite=Lax";'
         )
 
-    # Set remaining extra cookies ONLY for web
+    # Set tokenId and sessionToken ONLY when mobile is True
     if is_mobile:
         for key in ("tokenId", "sessionToken"):
             value = extra_cookies.get(key)
@@ -474,36 +474,62 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
 
     return cookie_js_lines
 
-def _build_redirect_url(request,course_id, next_page):
+def _build_redirect_url(request, course_id, next_page):
+    """
+    Build redirect URL for different navigation actions.
+    Routes to CMS (Studio) or LMS backend URLs based on the action.
+    """
+    # Get CMS and LMS base URLs from settings
+    cms_base = getattr(settings, 'CMS_BASE', None)
+    lms_base = getattr(settings, 'LMS_BASE', None)
+    lms_root_url = getattr(settings, 'LMS_ROOT_URL', None)
+
+    # Determine protocol and base URLs
     origin = request.get_host()
 
-    if not origin:
-        base = "https://apps.courses.networked.co"
-    elif "lab" in origin:
-        base = "https://apps.lms.lab.networked.co"
-    elif "qa" in origin or "local" in origin:
-        base = "https://apps.courses.qa.networked.co"
+    # If settings are not configured, fall back to request-based detection
+    if not cms_base or not lms_base:
+        # Fallback logic for environments without proper configuration
+        if "lab" in origin:
+            base_domain = "lms.lab.networked.co"
+        elif "qa" in origin or "local" in origin:
+            base_domain = "courses.qa.networked.co"
+        else:
+            base_domain = "courses.networked.co"
+
+        protocol = 'https' if 'local' not in origin and 'localhost' not in origin else 'http'
+        cms_base = cms_base or f"studio.{base_domain}"
+        lms_base = lms_base or base_domain
     else:
-        base = "https://apps.courses.networked.co"
+        protocol = 'https' if 'local' not in origin and 'localhost' not in origin else 'http'
 
-    learning_base = f'{base}/learning'
-    authoring_base = f'{base}/authoring'
+    # Build full URLs
+    cms_url = f'{protocol}://{cms_base}'
 
+    # Use LMS_ROOT_URL if available, otherwise construct from lms_base
+    if lms_root_url:
+        lms_url = lms_root_url
+    else:
+        lms_url = f'{protocol}://{lms_base}'
+
+    # CMS authoring routes - route to Studio backend
     authoring_routes = {
-        "add-lesson": "",
-        "edit-lesson": "",
-        "student-overview": "/settings/student-overview",
-        "score-board": "/settings/score-board",
-        "grading": "/settings/grading",
+        "add-lesson": f"{cms_url}/course/{course_id}",
+        "edit-lesson": f"{cms_url}/course/{course_id}",
+        "student-overview": f"{cms_url}/settings/student-overview/{course_id}",
+        "score-board": f"{cms_url}/settings/score-board/{course_id}",
+        "grading": f"{cms_url}/settings/grading/{course_id}",
     }
 
     if next_page in authoring_routes:
-        return f"{authoring_base}/course/{course_id}{authoring_routes[next_page]}"
+        return authoring_routes[next_page]
 
+    # LMS learning routes - route to LMS backend
     if next_page in ("resume-course", "start-course"):
-        return f"{learning_base}/course/{course_id}"
+        return f"{lms_url}/courses/{course_id}/courseware"
 
-    return f"{learning_base}/course/{course_id}/home"
+    # Default route - LMS course home
+    return f"{lms_url}/courses/{course_id}/home"
 
 
 @login_required
@@ -752,105 +778,33 @@ def login_user(request, api_version='v1'):  # pylint: disable=too-many-statement
     set_custom_attribute('login_user_response_status', response.status_code)
     return response
 
-
-@require_http_methods(['GET'])
-def common_redirect_to_login(request,userid):
-    try:
-        origin = request.get_host()  # e.g. "apps.courses.lab.networked.co"
-
-        if not origin:
-            # Default to QA if no origin found
-            base_url = "https://backend.qa.networked.co"
-        elif "lab" in origin:
-            base_url = "https://backend.lab.networked.co"
-        elif "qa" in origin:
-            base_url = "https://backend.qa.networked.co"
-        else:
-            base_url = "https://backend.networked.co"  # production
-            
-        response = requests.get(f'{base_url}/api/v1/global/open-edx/lms-session-id/{userid}')
-        response.raise_for_status()
-        data = response.json()
-        
-        # Determine the next URL based on the 'next' parameter
-        next_param = request.GET.get('next', '')
-        if next_param.startswith('create-course'):
-            # Extract course ID from the parameter, e.g., 'enroll-course:courseid'
-            parts = next_param.split(':', 1)
-            prefix = parts[0]
-            course_body = urllib.parse.unquote(parts[1]) if len(parts) > 1 else ''
-
-            # Step 2: Replace only the first two spaces with '+'
-            course_body_parts = course_body.split(' ', 2)  # Split into at most 3 parts
-            if len(course_body_parts) == 3:
-                course_id_cleaned = f"{course_body_parts[0]}+{course_body_parts[1]}+{course_body_parts[2]}"
-            else:
-                course_id_cleaned = course_body.replace(' ', '+', 2)  # fallback
-
-            # Step 3: Reconstruct full course ID
-            final_course_id = f"{course_id_cleaned}"
-            redirect_url = f'http://apps.local.openedx.io:2001/authoring/course/{final_course_id}'
-        elif next_param.startswith('enroll-course'):
-            # Extract course ID from the parameter, e.g., 'enroll-course:courseid'
-            parts = next_param.split(':', 1)
-            course_id = parts[1] if len(parts) > 1 else ''
-            redirect_url = f'http://apps.local.openedx.io:2000/learning/course/{course_id}/home'
-        else:
-            redirect_url = '/'
-
-        # Generate JS to set each cookie
-        cookie_js_lines = "\n".join([
-            f'document.cookie = "{key}=" + {json.dumps(value)} + "; path=/; max-age=1209600; SameSite=Lax";'
-            for key, value in data.items()
-        ])
-
-        # Send back script to set cookies and redirect
-        html = f"""
-        <html>
-        <head>
-            <script>
-                // Set all cookies
-                {cookie_js_lines}
-
-                // Redirect to home
-                window.location.href = "{redirect_url}";
-            </script>
-        </head>
-        <body>
-            Redirecting...
-        </body>
-        </html>
-        """
-        return HttpResponse(html, content_type="text/html")
-    except requests.RequestException as e:
-        return HttpResponse(f"Error during API request: {e}", status=500)
-    except ValueError:
-        return HttpResponse("Invalid JSON response", status=500)
-
+@ensure_csrf_cookie
 @require_http_methods(["GET"])
-def networked_login(request,courseid):
+def networked_login(request, courseid):
     print('--- networked_login called ---')
     """
     Handle networked login with token authentication and redirect.
 
     Expected URL:
-    /auth/networked-login?token=<token>&nextPage=<url>
+    /auth/networked-login/<courseid>?token=<token>&communityId=<communityId>&nextPage=<url>&isMobile=<true/false>
 
     Args:
-        request: HTTP request with token and nextPage parameters
+        request: HTTP request with token, communityId, nextPage, and isMobile parameters
+        courseid: Course ID from URL path
 
     Returns:
         HttpResponse: HTML with cookies set and redirect to specified URL
     """
     try:
-        # Get parameters from URL
+        # Step 1: Get parameters from URL
         token = request.GET.get("token")
-        communityId = request.GET.get("communityId")
+        community_id = request.GET.get("communityId")
         next_page = request.GET.get("nextPage", "")
+        is_mobile = request.GET.get('isMobile', 'false').lower() == 'true'
 
         if not token:
             return HttpResponse("Missing token parameter", status=400)
-        if not communityId:
+        if not community_id:
             return HttpResponse("Missing communityId parameter", status=400)
 
         # Determine backend URL based on request origin
@@ -866,41 +820,81 @@ def networked_login(request,courseid):
             base_url = "https://backend.networked.co"
 
         print(f"Determined base_url: {base_url} from origin: {origin}")
-        # Call networked backend API
+
+        # Step 2: Call networked backend API to get user credentials
         response = requests.get(
-            f"{base_url}/api/v1/auth/openedx-login/data?tokenId={token}&communityId={communityId}",
+            f"{base_url}/api/v1/auth/openedx-login/data?tokenId={token}&communityId={community_id}",
             timeout=10,
         )
-        # response.raise_for_status()
-        data = response.json()
-        data = data.get("data", {})
+        response.raise_for_status()
+        api_data = response.json()
+        api_data = api_data.get("data", {})
+        
         print("Received data from backend:")
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+        print(json.dumps(api_data, indent=2, ensure_ascii=False))
 
-        community = data.get("community", {})
-        openedx_data = data.get("openedx", {})
-        user_data = data.get("user", {})
-        community_details = data.get("communityDetails", {})
+        # Extract data from API response
+        openedx_data = api_data.get("openedx", {})
+        user_data = api_data.get("user", {})
+        session_token = api_data.get("sessionToken")
+        
+        # Get username and password from API response (or use static for now)
+        # TODO: Replace with actual values from API
+        username = openedx_data.get("username", "")  # Replace with actual field
+        password = openedx_data.get("password", "")
+        
+        print(f"Authenticating user: {username}")
 
-        community_id = community_details.get("communityId", communityId)
+        # Step 3: Authenticate the user using Django authentication
+        user = _get_user_by_username(username)
+        
+        if not user:
+            AUDIT_LOG.warning(f"Networked login failed - User not found: {username}")
+            return HttpResponse("User not found", status=404)
 
-        # Decode redirect URL
-        redirect_url = _build_redirect_url(request,courseid, next_page)
+        # Authenticate with password
+        authenticated_user = authenticate(
+            username=username,
+            password=password,
+            request=request
+        )
 
-        openedx_cookies = openedx_data.get("cookies", {})
+        if not authenticated_user:
+            AUDIT_LOG.warning(f"Networked login failed - Authentication failed for user: {username}")
+            return HttpResponse("Authentication failed", status=401)
 
+        if not authenticated_user.is_active:
+            AUDIT_LOG.warning(f"Networked login failed - User is not active: {username}")
+            return HttpResponse("User account is not active", status=403)
+
+        # Handle successful authentication and login
+        _handle_successful_authentication_and_login(authenticated_user, request)
+
+        # Step 4: Build redirect URL
+        redirect_url = _build_redirect_url(request, courseid, next_page)
+
+        # Prepare extra cookies based on is_mobile flag
         extra_cookies = {
-            "openedxCommunityId": community_id,
-            "tokenId": token,
-            "sessionToken": data.get("sessionToken"),
+            "openedxCommunityId": community_id,  # Always set
         }
+        
+        # Only set tokenId and sessionToken if mobile is True
+        if is_mobile:
+            if token:
+                extra_cookies["tokenId"] = token
+            if session_token:
+                extra_cookies["sessionToken"] = session_token
 
-        # Merge (Python 3.9+)
-        all_cookies = {
-            **openedx_cookies,
-            **{k: v for k, v in extra_cookies.items() if v is not None}
-        }
+        print(f"is_mobile: {is_mobile}")
+        print(f"extra_cookies to set: {extra_cookies}")
 
+        # Get OpenEdX cookies from the authenticated session
+        openedx_cookies = {}
+        for key, value in request.COOKIES.items():
+            if key.startswith(('sessionid', 'csrftoken', 'edx')):
+                openedx_cookies[key] = value
+
+        # Generate domain helper JavaScript
         domain_helper_js = """
             function getParentDomain() {
                 const parts = window.location.hostname.split('.');
@@ -923,15 +917,10 @@ def networked_login(request,courseid):
             const parentDomain = getParentDomain();
         """
 
-
-        # Check if this is a mobile request
-        is_mobile = request.GET.get('isMobile', 'false').lower() == 'true'
-        
         # Generate JS to set cookies
         cookie_js_lines = _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=is_mobile)
 
-
-
+        # Generate local storage setup
         local_storage_js = f"""
             if ({json.dumps(community_id)}) {{
                 localStorage.setItem(
@@ -946,9 +935,7 @@ def networked_login(request,courseid):
                     JSON.stringify({json.dumps(user_data)})
                 );
             }}
-
         """
-
 
         # HTML response with cookie setting + redirect
         html = f"""
@@ -966,7 +953,7 @@ def networked_login(request,courseid):
                             if (name) {{
                                 // Clear with default domain
                                 document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax";
-                                // Clear with parent domain - only when isMobile is true
+                                // Clear with parent domain - only when mobile is True
                                 if (isMobile) {{
                                     document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=" + parentDomain + ";path=/;SameSite=Lax";
                                 }}
@@ -988,17 +975,26 @@ def networked_login(request,courseid):
                 </script>
             </head>
             <body>
-                Redirecting...
+                <p>Authenticating and redirecting...</p>
             </body>
         </html>
         """
 
-        # return HttpResponse(f"during API request: worked {base_url} : community_id : {all_cookies} : redirect_url : {redirect_url}", status=200)
-        return HttpResponse(html, content_type="text/html")
+        response = HttpResponse(html, content_type="text/html")
+        
+        # Set logged in cookies using the standard method
+        response = set_logged_in_cookies(request, response, authenticated_user)
+        
+        # Mark user change as expected
+        mark_user_change_as_expected(authenticated_user.id)
+        
+        AUDIT_LOG.info(f"Networked login successful for user: {username}")
+        
+        return response
 
     except requests.RequestException as e:
         AUDIT_LOG.error(f"Networked login failed - API request error: {e}")
-        return HttpResponse("Error during API request", status=500)
+        return HttpResponse(f"Error during API request: {str(e)}", status=500)
 
     except ValueError as e:
         AUDIT_LOG.error(f"Networked login failed - Invalid JSON response: {e}")
@@ -1006,7 +1002,8 @@ def networked_login(request,courseid):
 
     except Exception as e:
         AUDIT_LOG.error(f"Networked login failed - Unexpected error: {e}")
-        return HttpResponse(f"An unexpected error occurred : {e}", status=500)
+        log.exception(e)
+        return HttpResponse(f"An unexpected error occurred: {str(e)}", status=500)
 
 # CSRF protection is not needed here because the only side effect
 # of this endpoint is to refresh the cookie-based JWT, and attempting

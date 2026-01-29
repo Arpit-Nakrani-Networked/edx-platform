@@ -46,6 +46,8 @@ from cms.djangoapps.contentstore.toggles import (
     use_new_files_uploads_page,
     use_new_grading_page,
     use_new_group_configurations_page,
+    use_new_score_board_page,
+    use_new_student_overview_page,
     use_new_course_team_page,
     use_new_home_page,
     use_new_import_page,
@@ -336,6 +338,32 @@ def get_grading_url(course_locator) -> str:
         if mfe_base_url:
             grading_url = course_mfe_url
     return grading_url
+
+
+def get_score_board_url(course_locator) -> str:
+    """
+    Gets course authoring microfrontend URL for score-board page view.
+    """
+    score_board_url = None
+    if use_new_score_board_page(course_locator):
+        mfe_base_url = get_course_authoring_url(course_locator)
+        course_mfe_url = f'{mfe_base_url}/course/{course_locator}/settings/score-board'
+        if mfe_base_url:
+            score_board_url = course_mfe_url
+    return score_board_url
+
+
+def get_student_overview_url(course_locator) -> str:
+    """
+    Gets course authoring microfrontend URL for student-overview page view.
+    """
+    student_overview_url = None
+    if use_new_student_overview_page(course_locator):
+        mfe_base_url = get_course_authoring_url(course_locator)
+        course_mfe_url = f'{mfe_base_url}/course/{course_locator}/settings/student-overview'
+        if mfe_base_url:
+            student_overview_url = course_mfe_url
+    return student_overview_url
 
 
 def get_course_team_url(course_locator) -> str:

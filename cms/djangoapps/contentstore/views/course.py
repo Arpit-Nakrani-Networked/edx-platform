@@ -88,6 +88,8 @@ from ..toggles import (
     use_new_updates_page,
     use_new_advanced_settings_page,
     use_new_grading_page,
+    use_new_score_board_page,
+    use_new_student_overview_page,
     use_new_textbooks_page,
     use_new_group_configurations_page,
     use_new_schedule_details_page
@@ -101,6 +103,8 @@ from ..utils import (
     get_course_rerun_context,
     get_course_settings,
     get_grading_url,
+    get_score_board_url,
+    get_student_overview_url,
     get_group_configurations_context,
     get_group_configurations_url,
     get_home_context,
@@ -132,6 +136,8 @@ __all__ = ['course_info_handler', 'course_handler', 'course_listing',
            'settings_handler',
            'library_listing',
            'grading_handler',
+           'score_board_handler',
+           'student_overview_handler',
            'advanced_settings_handler',
            'course_notifications_handler',
            'textbooks_list_handler', 'textbooks_detail_handler',
@@ -1260,6 +1266,76 @@ def grading_handler(request, course_key_string, grader_index=None):
             elif request.method == "DELETE" and grader_index is not None:
                 CourseGradingModel.delete_grader(course_key, grader_index, request.user)
                 return JsonResponse()
+
+
+@login_required
+@ensure_csrf_cookie
+@require_http_methods(("GET",))
+@expect_json
+def score_board_handler(request, course_key_string):
+    """
+    Course Score Board configuration
+    GET
+        html: redirect to the MFE page if enabled, otherwise return 404
+        json: return score board data (to be implemented)
+    """
+    course_key = CourseKey.from_string(course_key_string)
+    with modulestore().bulk_operations(course_key):
+        if not has_studio_read_access(request.user, course_key):
+            raise PermissionDenied()
+
+        if 'text/html' in request.META.get('HTTP_ACCEPT', '') and request.method == 'GET':
+            if use_new_score_board_page(course_key):
+                score_board_url = get_score_board_url(course_key)
+                if score_board_url:
+                    return redirect(score_board_url)
+            # For now, return 404 if MFE is not enabled or URL is not configured
+            # You can implement a legacy view here if needed
+            return HttpResponseNotFound('Score board page is only available in the MFE')
+        elif 'application/json' in request.META.get('HTTP_ACCEPT', ''):
+            if request.method == 'GET':
+                # TODO: Implement score board data retrieval
+                # This is a placeholder that returns empty data
+                return JsonResponse({
+                    'course_id': str(course_key),
+                    'score_board_data': [],
+                    'message': 'Score board data endpoint to be implemented'
+                })
+
+
+@login_required
+@ensure_csrf_cookie
+@require_http_methods(("GET",))
+@expect_json
+def student_overview_handler(request, course_key_string):
+    """
+    Course Student Overview configuration
+    GET
+        html: redirect to the MFE page if enabled, otherwise return 404
+        json: return student overview data (to be implemented)
+    """
+    course_key = CourseKey.from_string(course_key_string)
+    with modulestore().bulk_operations(course_key):
+        if not has_studio_read_access(request.user, course_key):
+            raise PermissionDenied()
+
+        if 'text/html' in request.META.get('HTTP_ACCEPT', '') and request.method == 'GET':
+            if use_new_student_overview_page(course_key):
+                student_overview_url = get_student_overview_url(course_key)
+                if student_overview_url:
+                    return redirect(student_overview_url)
+            # For now, return 404 if MFE is not enabled or URL is not configured
+            # You can implement a legacy view here if needed
+            return HttpResponseNotFound('Student overview page is only available in the MFE')
+        elif 'application/json' in request.META.get('HTTP_ACCEPT', ''):
+            if request.method == 'GET':
+                # TODO: Implement student overview data retrieval
+                # This is a placeholder that returns empty data
+                return JsonResponse({
+                    'course_id': str(course_key),
+                    'student_overview_data': [],
+                    'message': 'Student overview data endpoint to be implemented'
+                })
 
 
 def _refresh_course_tabs(user: User, course_block: CourseBlock):

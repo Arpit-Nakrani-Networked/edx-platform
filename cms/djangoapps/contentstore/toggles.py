@@ -334,6 +334,84 @@ def use_new_grading_page(course_key):
     return ENABLE_NEW_STUDIO_GRADING_PAGE.is_enabled(course_key)
 
 
+# .. toggle_name: contentstore.new_studio_mfe.use_new_score_board_page
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: True
+# .. toggle_description: This flag enables the use of the new studio score-board page mfe
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-1-29
+# .. toggle_target_removal_date: 2026-4-30
+# .. toggle_tickets:
+# .. toggle_warning:
+ENABLE_NEW_STUDIO_SCORE_BOARD_PAGE = CourseWaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.new_studio_mfe.use_new_score_board_page', __name__)
+
+
+def use_new_score_board_page(course_key):
+    """
+    Returns a boolean if new studio score-board mfe is enabled.
+    Auto-creates and enables the flag for all users if it doesn't exist.
+    """
+    from waffle.models import Flag
+
+    flag_name = f'{CONTENTSTORE_NAMESPACE}.new_studio_mfe.use_new_score_board_page'
+
+    # Auto-create the flag if it doesn't exist
+    try:
+        flag, created = Flag.objects.get_or_create(
+            name=flag_name,
+            defaults={'everyone': True, 'note': 'Auto-created for score-board MFE'}
+        )
+        if created or not flag.everyone:
+            # Ensure it's enabled for everyone
+            flag.everyone = True
+            flag.save()
+    except Exception:
+        # If there's any error with flag creation, just continue
+        pass
+
+    return ENABLE_NEW_STUDIO_SCORE_BOARD_PAGE.is_enabled(course_key)
+
+
+# .. toggle_name: contentstore.new_studio_mfe.use_new_student_overview_page
+# .. toggle_implementation: CourseWaffleFlag
+# .. toggle_default: True
+# .. toggle_description: This flag enables the use of the new studio student-overview page mfe
+# .. toggle_use_cases: temporary
+# .. toggle_creation_date: 2026-1-29
+# .. toggle_target_removal_date: 2026-4-30
+# .. toggle_tickets:
+# .. toggle_warning:
+ENABLE_NEW_STUDIO_STUDENT_OVERVIEW_PAGE = CourseWaffleFlag(
+    f'{CONTENTSTORE_NAMESPACE}.new_studio_mfe.use_new_student_overview_page', __name__)
+
+
+def use_new_student_overview_page(course_key):
+    """
+    Returns a boolean if new studio student-overview mfe is enabled.
+    Auto-creates and enables the flag for all users if it doesn't exist.
+    """
+    from waffle.models import Flag
+
+    flag_name = f'{CONTENTSTORE_NAMESPACE}.new_studio_mfe.use_new_student_overview_page'
+
+    # Auto-create the flag if it doesn't exist
+    try:
+        flag, created = Flag.objects.get_or_create(
+            name=flag_name,
+            defaults={'everyone': True, 'note': 'Auto-created for student-overview MFE'}
+        )
+        if created or not flag.everyone:
+            # Ensure it's enabled for everyone
+            flag.everyone = True
+            flag.save()
+    except Exception:
+        # If there's any error with flag creation, just continue
+        pass
+
+    return ENABLE_NEW_STUDIO_STUDENT_OVERVIEW_PAGE.is_enabled(course_key)
+
+
 # .. toggle_name: contentstore.new_studio_mfe.use_new_updates_page
 # .. toggle_implementation: CourseWaffleFlag
 # .. toggle_default: False

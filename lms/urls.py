@@ -24,7 +24,7 @@ from lms.djangoapps.courseware.block_render import (
     xqueue_callback
 )
 from lms.djangoapps.courseware.views import views as courseware_views
-from lms.djangoapps.courseware.views.index import CoursewareIndex
+from lms.djangoapps.courseware.views.index import CoursewareIndex, CourseHomeIndex
 from lms.djangoapps.courseware.views.views import CourseTabView, EnrollStaffView, StaticCourseTabView
 from lms.djangoapps.debug import views as debug_views
 from lms.djangoapps.discussion import views as discussion_views
@@ -501,6 +501,15 @@ urlpatterns += [
         ),
         CoursewareIndex.as_view(),
         name='courseware_position',
+    ),
+
+    # home page (redirects to Learning MFE)
+    re_path(
+        r'^courses/{}/home/?$'.format(
+            settings.COURSE_ID_PATTERN,
+        ),
+        CourseHomeIndex.as_view(),
+        name='course_home',
     ),
 
     # progress page

@@ -599,3 +599,49 @@ def save_positions_recursively_up(user, request, field_data_cache, xmodule, cour
             save_child_position(parent, current_block.location.block_id)
 
         current_block = parent
+
+
+@method_decorator(transaction.non_atomic_requests, name='dispatch')
+class CourseHomeIndex(View):
+    """
+    View class for the Course Home page that redirects to the Learning MFE.
+    Similar to CoursewareIndex but specifically for the home page.
+    """
+
+    @method_decorator(ensure_csrf_cookie)
+    @method_decorator(cache_control(no_cache=True, no_store=True, must_revalidate=True))
+    @method_decorator(ensure_valid_course_key)
+    @method_decorator(data_sharing_consent_required)
+    def get(self, request, course_id):
+        """
+        Redirects to the Learning MFE course home page.
+
+        Arguments:
+            request: HTTP request
+            course_id (unicode): course id
+        """
+        course_key = CourseKey.from_string(course_id)
+
+        # Check if user needs to be authenticated
+        if not request.user.is_authenticated:
+            return redirect_to_login(request.get_full_path())
+
+        # Build the MFE home URL using settings.LEARNING_MICROFRONTEND_URL
+        # This respects the LEARNING_MICROFRONTEND_URL setting (e.g., http://apps.local.openedx.io:2000/learning)
+        # and constructs a URL like: {LEARNING_MICROFRONTEND_URL}/course/{course_id}/home
+        from django.shortcuts import redirect
+
+        home_url = make_learning_mfe_courseware_url(
+            course_key=course_key,
+            sequence_key=None,
+            unit_key=None,
+            params=None,
+        )
+        # Replace the base courseware URL pattern with the home pattern
+        # From: /course/{course_id} to: /course/{course_id}/home
+        home_url = f'{settings.LEARNING_MICROFRONTEND_URL}/course/{course_id}/home'
+
+        if request.GET:
+            home_url += f'?{request.GET.urlencode()}'
+
+        return redirect(home_url)
