@@ -1013,8 +1013,26 @@ def networked_login(request,courseid):
         </html>
         """
 
-        # return HttpResponse(f"during API request: worked {base_url} : community_id : {all_cookies} : redirect_url : {redirect_url}", status=200)
-        return HttpResponse(html, content_type="text/html")
+        # Create response and clear HTTPOnly cookies server-side
+        response = HttpResponse(html, content_type="text/html")
+
+        # Delete sessionid cookie (HTTPOnly - must be deleted server-side)
+        # Try multiple domain variations to ensure it's deleted
+        response.delete_cookie('sessionid', path='/', domain=None)  # Host-only
+        response.delete_cookie('sessionid', path='/', domain=request.get_host())  # With hostname
+
+        # Also delete edx-jwt cookies server-side for completeness
+        response.delete_cookie('edx-jwt-cookie-header-payload', path='/', domain=None)
+        response.delete_cookie('edx-jwt-cookie-signature', path='/', domain=None)
+
+        # Try with the current hostname domain
+        hostname = request.get_host()
+        if hostname:
+            response.delete_cookie('sessionid', path='/', domain=f'.{hostname}')
+            response.delete_cookie('edx-jwt-cookie-header-payload', path='/', domain=f'.{hostname}')
+            response.delete_cookie('edx-jwt-cookie-signature', path='/', domain=f'.{hostname}')
+
+        return response
 
     except requests.RequestException as e:
         AUDIT_LOG.error(f"Networked login failed - API request error: {e}")
