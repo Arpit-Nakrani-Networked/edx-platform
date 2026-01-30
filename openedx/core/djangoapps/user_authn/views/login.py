@@ -780,7 +780,7 @@ def login_user(request, api_version='v1'):  # pylint: disable=too-many-statement
 
 @ensure_csrf_cookie
 @require_http_methods(["GET"])
-def networked_login(request, courseid):
+def networked_login(request,courseid):
     print('--- networked_login called ---')
     """
     Handle networked login with token authentication and redirect.
@@ -798,13 +798,12 @@ def networked_login(request, courseid):
     try:
         # Step 1: Get parameters from URL
         token = request.GET.get("token")
-        community_id = request.GET.get("communityId")
+        communityId = request.GET.get("communityId")
         next_page = request.GET.get("nextPage", "")
-        is_mobile = request.GET.get('isMobile', 'false').lower() == 'true'
 
         if not token:
             return HttpResponse("Missing token parameter", status=400)
-        if not community_id:
+        if not communityId:
             return HttpResponse("Missing communityId parameter", status=400)
 
         # Determine backend URL based on request origin
@@ -823,78 +822,38 @@ def networked_login(request, courseid):
 
         # Step 2: Call networked backend API to get user credentials
         response = requests.get(
-            f"{base_url}/api/v1/auth/openedx-login/data?tokenId={token}&communityId={community_id}",
+            f"{base_url}/api/v1/auth/openedx-login/data?tokenId={token}&communityId={communityId}",
             timeout=10,
         )
-        response.raise_for_status()
-        api_data = response.json()
-        api_data = api_data.get("data", {})
-        
+        # response.raise_for_status()
+        data = response.json()
+        data = data.get("data", {})
         print("Received data from backend:")
-        print(json.dumps(api_data, indent=2, ensure_ascii=False))
+        print(json.dumps(data, indent=2, ensure_ascii=False))
 
-        # Extract data from API response
-        openedx_data = api_data.get("openedx", {})
-        user_data = api_data.get("user", {})
-        session_token = api_data.get("sessionToken")
-        
-        # Get username and password from API response (or use static for now)
-        # TODO: Replace with actual values from API
-        username = openedx_data.get("username", "")  # Replace with actual field
-        password = openedx_data.get("password", "")
-        
-        print(f"Authenticating user: {username}")
+        openedx_data = data.get("openedx", {})
+        user_data = data.get("user", {})
+        community_details = data.get("communityDetails", {})
 
-        # Step 3: Authenticate the user using Django authentication
-        user = _get_user_by_username(username)
-        
-        if not user:
-            AUDIT_LOG.warning(f"Networked login failed - User not found: {username}")
-            return HttpResponse("User not found", status=404)
+        community_id = community_details.get("communityId", communityId)
 
-        # Authenticate with password
-        authenticated_user = authenticate(
-            username=username,
-            password=password,
-            request=request
-        )
+        # Decode redirect URL
+        redirect_url = _build_redirect_url(request,courseid, next_page)
 
-        if not authenticated_user:
-            AUDIT_LOG.warning(f"Networked login failed - Authentication failed for user: {username}")
-            return HttpResponse("Authentication failed", status=401)
+        openedx_cookies = openedx_data.get("cookies", {})
 
-        if not authenticated_user.is_active:
-            AUDIT_LOG.warning(f"Networked login failed - User is not active: {username}")
-            return HttpResponse("User account is not active", status=403)
-
-        # Handle successful authentication and login
-        _handle_successful_authentication_and_login(authenticated_user, request)
-
-        # Step 4: Build redirect URL
-        redirect_url = _build_redirect_url(request, courseid, next_page)
-
-        # Prepare extra cookies based on is_mobile flag
         extra_cookies = {
-            "openedxCommunityId": community_id,  # Always set
+            "openedxCommunityId": community_id,
+            "tokenId": token,
+            "sessionToken": data.get("sessionToken"),
         }
-        
-        # Only set tokenId and sessionToken if mobile is True
-        if is_mobile:
-            if token:
-                extra_cookies["tokenId"] = token
-            if session_token:
-                extra_cookies["sessionToken"] = session_token
 
-        print(f"is_mobile: {is_mobile}")
-        print(f"extra_cookies to set: {extra_cookies}")
+        # Merge (Python 3.9+)
+        all_cookies = {
+            **openedx_cookies,
+            **{k: v for k, v in extra_cookies.items() if v is not None}
+        }
 
-        # Get OpenEdX cookies from the authenticated session
-        openedx_cookies = {}
-        for key, value in request.COOKIES.items():
-            if key.startswith(('sessionid', 'csrftoken', 'edx')):
-                openedx_cookies[key] = value
-
-        # Generate domain helper JavaScript
         domain_helper_js = """
             function getParentDomain() {
                 const parts = window.location.hostname.split('.');
@@ -917,10 +876,15 @@ def networked_login(request, courseid):
             const parentDomain = getParentDomain();
         """
 
+
+        # Check if this is a mobile request
+        is_mobile = request.GET.get('isMobile', 'false').lower() == 'true'
+        
         # Generate JS to set cookies
         cookie_js_lines = _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=is_mobile)
 
-        # Generate local storage setup
+
+
         local_storage_js = f"""
             if ({json.dumps(community_id)}) {{
                 localStorage.setItem(
@@ -935,12 +899,74 @@ def networked_login(request, courseid):
                     JSON.stringify({json.dumps(user_data)})
                 );
             }}
+
         """
+
 
         # HTML response with cookie setting + redirect
         html = f"""
         <html>
             <head>
+                <style>
+                    body {{
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background: #fff;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+                    }}
+
+                    .loader-container {{
+                        text-align: center;
+                    }}
+
+                    .loader {{
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 8px;
+                        height: 60px;
+                        margin: 0 auto 30px;
+                    }}
+
+                    .dot {{
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 50%;
+                        background-color: #4A90E2;
+                        animation: bounce 1.4s infinite ease-in-out both;
+                    }}
+
+                    .dot:nth-child(1) {{
+                        animation-delay: -0.32s;
+                    }}
+
+                    .dot:nth-child(2) {{
+                        animation-delay: -0.16s;
+                    }}
+
+                    @keyframes bounce {{
+                        0%, 80%, 100% {{
+                            transform: scale(0.8);
+                            opacity: 0.6;
+                        }}
+                        40% {{
+                            transform: scale(1);
+                            opacity: 1;
+                        }}
+                    }}
+
+                    .loader-text {{
+                        color: #333;
+                        font-size: 18px;
+                        font-weight: 400;
+                        margin-top: 20px;
+                        letter-spacing: 0.5px;
+                    }}
+                </style>
                 <script>
                     {domain_helper_js}
 
@@ -953,7 +979,7 @@ def networked_login(request, courseid):
                             if (name) {{
                                 // Clear with default domain
                                 document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax";
-                                // Clear with parent domain - only when mobile is True
+                                // Clear with parent domain - only when isMobile is true
                                 if (isMobile) {{
                                     document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=" + parentDomain + ";path=/;SameSite=Lax";
                                 }}
@@ -975,26 +1001,24 @@ def networked_login(request, courseid):
                 </script>
             </head>
             <body>
-                <p>Authenticating and redirecting...</p>
+                <div class="loader-container">
+                    <div class="loader">
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                    </div>
+                    <div class="loader-text">Setting up your courses</div>
+                </div>
             </body>
         </html>
         """
 
-        response = HttpResponse(html, content_type="text/html")
-        
-        # Set logged in cookies using the standard method
-        response = set_logged_in_cookies(request, response, authenticated_user)
-        
-        # Mark user change as expected
-        mark_user_change_as_expected(authenticated_user.id)
-        
-        AUDIT_LOG.info(f"Networked login successful for user: {username}")
-        
-        return response
+        # return HttpResponse(f"during API request: worked {base_url} : community_id : {all_cookies} : redirect_url : {redirect_url}", status=200)
+        return HttpResponse(html, content_type="text/html")
 
     except requests.RequestException as e:
         AUDIT_LOG.error(f"Networked login failed - API request error: {e}")
-        return HttpResponse(f"Error during API request: {str(e)}", status=500)
+        return HttpResponse("Error during API request", status=500)
 
     except ValueError as e:
         AUDIT_LOG.error(f"Networked login failed - Invalid JSON response: {e}")
@@ -1002,9 +1026,7 @@ def networked_login(request, courseid):
 
     except Exception as e:
         AUDIT_LOG.error(f"Networked login failed - Unexpected error: {e}")
-        log.exception(e)
-        return HttpResponse(f"An unexpected error occurred: {str(e)}", status=500)
-
+        return HttpResponse(f"An unexpected error occurred : {e}", status=500)
 # CSRF protection is not needed here because the only side effect
 # of this endpoint is to refresh the cookie-based JWT, and attempting
 # to get a CSRF token before we need to refresh adds too much
