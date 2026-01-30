@@ -447,11 +447,11 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
     """
     cookie_js_lines = []
 
-    # Open edX cookies (host-only)
+    # Open edX cookies - set with current hostname domain (e.g., .courses.qa.networked.co)
     for key, value in openedx_cookies.items():
         cookie_js_lines.append(
             f'document.cookie = "{key}=" + {json.dumps(value)} + '
-            f'"; path=/; max-age=1209600; SameSite=Lax";'
+            f'"; path=/; domain=." + window.location.hostname + "; max-age=1209600; SameSite=Lax";'
         )
 
     # Always set openedxCommunityId (both mobile and web)
