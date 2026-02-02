@@ -4,10 +4,16 @@
 <%def name="online_help_token()">
   <% return "courseware" %>
 </%def>
-<%! import waffle from django.conf import settings from django.urls import reverse from django.utils.translation import
-  gettext as _ from lms.djangoapps.edxnotes.helpers import is_feature_enabled as is_edxnotes_enabled from
-  openedx.core.djangolib.js_utils import js_escaped_string from openedx.core.djangolib.markup import HTML from
-  openedx.features.course_experience import course_home_page_title, DISABLE_COURSE_OUTLINE_PAGE_FLAG %>
+<%!
+import waffle
+from django.conf import settings
+from django.urls import reverse
+from django.utils.translation import gettext as _
+from lms.djangoapps.edxnotes.helpers import is_feature_enabled as is_edxnotes_enabled
+from openedx.core.djangolib.js_utils import js_escaped_string
+from openedx.core.djangolib.markup import HTML
+from openedx.features.course_experience import course_home_page_title, DISABLE_COURSE_OUTLINE_PAGE_FLAG
+%>
   <% include_special_exams=( request.user.is_authenticated and settings.FEATURES.get('ENABLE_SPECIAL_EXAMS', False) and
     (course.enable_proctored_exams or course.enable_timed_exams) )
     completion_aggregator_url=getattr(settings, "COMPLETION_AGGREGATOR_URL" , "" ) %>
