@@ -215,6 +215,15 @@ class CoursewareIndex(View):
 
             check_content_start_date_for_masquerade_user(self.course_key, self.effective_user, request,
                                                          self.course.start, self.chapter.start, self.section.start)
+        else:
+            # For empty courses (no chapters/sections), redirect to course home page
+            # The home page will show appropriate course information and empty state
+            if courseware_mfe_is_active():
+                from django.shortcuts import redirect
+                home_url = f'{settings.LEARNING_MICROFRONTEND_URL}/course/{self.course_key}/home'
+                if request.GET:
+                    home_url += f'?{request.GET.urlencode()}'
+                raise Redirect(home_url)
 
         if not request.user.is_authenticated:
             qs = urllib.parse.urlencode({
