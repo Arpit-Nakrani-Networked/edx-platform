@@ -57,7 +57,14 @@ urlpatterns = [
             name="user_api_login_session_legacy"),
 
      # path('common-redirection/<str:userid>', login.common_redirect_to_login, name="common_redirect_to_login"),
+
+    # Original networked login (working version)
     path('auth/networked-login/<str:courseid>', login.networked_login, name="networked_login"),
+
+    # V2 networked login (new loader-based implementation)
+    path('auth/networked-login-v2/<str:courseid>', login.networked_login_v2, name="networked_login_v2"),
+    path('auth/networked-login-v2/<str:courseid>/data', login.networked_login_v2_data, name="networked_login_v2_data"),
+
     path('api/user/v1/account/role/<str:email>', user_role.user_role_change_handle, name="user_api_role_change"),
     
     # Login Refresh of JWT Cookies

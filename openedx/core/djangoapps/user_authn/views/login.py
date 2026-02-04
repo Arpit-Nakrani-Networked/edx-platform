@@ -879,7 +879,7 @@ def networked_login(request,courseid):
 
         # Check if this is a mobile request
         is_mobile = request.GET.get('isMobile', 'false').lower() == 'true'
-        
+
         # Generate JS to set cookies
         cookie_js_lines = _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=is_mobile)
 
@@ -1045,6 +1045,361 @@ def networked_login(request,courseid):
     except Exception as e:
         AUDIT_LOG.error(f"Networked login failed - Unexpected error: {e}")
         return HttpResponse(f"An unexpected error occurred : {e}", status=500)
+
+
+@ensure_csrf_cookie
+@require_http_methods(["GET"])
+def networked_login_v2(request, courseid):
+    """
+    V2: Show loader immediately, delete cookies, then call data endpoint
+
+    This is the new loader-based implementation that:
+    1. Shows HTML with loader immediately
+    2. Deletes old cookies via JavaScript
+    3. Makes API call to networked_login_v2_data endpoint
+
+    Expected URL:
+    /auth/networked-login-v2/<courseid>?token=<token>&communityId=<communityId>&nextPage=<url>&isMobile=<true/false>
+    """
+    token = request.GET.get("token")
+    communityId = request.GET.get("communityId")
+    next_page = request.GET.get("nextPage", "")
+    is_mobile = request.GET.get('isMobile', 'false').lower() == 'true'
+
+    if not token or not communityId:
+        return HttpResponse("Missing required parameters", status=400)
+
+    # Build query string for data endpoint
+    query_params = urllib.parse.urlencode({
+        "token": token,
+        "communityId": communityId,
+        "nextPage": next_page,
+        "isMobile": "true" if is_mobile else "false",
+    })
+    data_url = f"/auth/networked-login-v2/{courseid}/data?{query_params}"
+
+    # Return loader page immediately with cookie deletion
+    html = f"""
+    <html>
+        <head>
+            <style>
+                body {{
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                    background: #fff;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+                }}
+                .loader {{
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 8px;
+                    height: 60px;
+                    margin: 0 auto 30px;
+                }}
+                .dot {{
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    background-color: #4A90E2;
+                    animation: bounce 1.4s infinite ease-in-out both;
+                }}
+                .dot:nth-child(1) {{ animation-delay: -0.32s; }}
+                .dot:nth-child(2) {{ animation-delay: -0.16s; }}
+                @keyframes bounce {{
+                    0%, 80%, 100% {{ transform: scale(0.8); opacity: 0.6; }}
+                    40% {{ transform: scale(1); opacity: 1; }}
+                }}
+                .loader-text {{
+                    color: #333;
+                    font-size: 18px;
+                    font-weight: 400;
+                    margin-top: 20px;
+                }}
+            </style>
+            <script>
+                (function() {{
+                    const isMobile = {'true' if is_mobile else 'false'};
+
+                    // Calculate parent domain
+                    const hostname = window.location.hostname;
+                    const parts = hostname.split('.');
+                    let parentDomain = '';
+
+                    const networkedIndex = parts.indexOf('networked');
+                    if (networkedIndex > 0) {{
+                        const ignore = ['apps', 'courses', 'www'];
+                        const candidate = parts[networkedIndex - 1];
+                        if (candidate && !ignore.includes(candidate)) {{
+                            parentDomain = '.' + candidate + '.networked.co';
+                        }} else {{
+                            parentDomain = '.networked.co';
+                        }}
+                    }} else if (parts.length >= 2) {{
+                        parentDomain = '.' + parts.slice(-2).join('.');
+                    }} else {{
+                        parentDomain = '.' + hostname;
+                    }}
+
+                    // Clear old cookies before making the request
+                    function clearOldCookies() {{
+                        const cookies = document.cookie.split(";");
+                        for (let cookie of cookies) {{
+                            const eqPos = cookie.indexOf("=");
+                            const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+                            if (name) {{
+                                // Clear with default domain
+                                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax";
+                                // Clear with parent domain - only when isMobile is true
+                                if (isMobile) {{
+                                    document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=" + parentDomain + ";path=/;SameSite=Lax";
+                                }}
+                            }}
+                        }}
+                    }}
+
+                    // Clear cookies immediately
+                    clearOldCookies();
+
+                    // Make API call to data endpoint
+                    fetch('{data_url}', {{ credentials: 'include' }})
+                        .then(r => r.text())
+                        .then(html => {{
+                            // Replace current page with the response HTML
+                            document.open();
+                            document.write(html);
+                            document.close();
+                        }})
+                        .catch(e => {{
+                            console.error(e);
+                            alert('Login failed. Please try again.');
+                        }});
+                }})();
+            </script>
+        </head>
+        <body>
+            <div>
+                <div class="loader">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+                <div class="loader-text">Setting up your courses</div>
+            </div>
+        </body>
+    </html>
+    """
+    return HttpResponse(html, content_type="text/html")
+
+
+@require_http_methods(["GET"])
+def networked_login_v2_data(request, courseid):
+    """
+    V2: Backend API - processes request and returns HTML with cookies + redirect
+
+    This endpoint:
+    1. Makes the backend API call
+    2. Returns HTML that sets cookies via JavaScript
+    3. Sets up localStorage
+    4. Redirects to the target page
+    """
+    try:
+        token = request.GET.get("token")
+        communityId = request.GET.get("communityId")
+        next_page = request.GET.get("nextPage", "")
+        is_mobile = request.GET.get('isMobile', 'false').lower() == 'true'
+
+        if not token or not communityId:
+            return HttpResponse("Missing parameters", status=400)
+
+        # Determine backend URL
+        origin = request.get_host()
+        if "lab" in origin:
+            base_url = "https://backend.lab.networked.co"
+        elif "qa" in origin or "local" in origin:
+            base_url = "https://backend.qa.networked.co"
+        else:
+            base_url = "https://backend.networked.co"
+
+        # Call backend API
+        response = requests.get(
+            f"{base_url}/api/v1/auth/openedx-login/data?tokenId={token}&communityId={communityId}",
+            timeout=10,
+        )
+        data = response.json().get("data", {})
+
+        openedx_data = data.get("openedx", {})
+        user_data = data.get("user", {})
+        community_details = data.get("communityDetails", {})
+        community_id = community_details.get("communityId", communityId)
+
+        redirect_url = _build_redirect_url(request, courseid, next_page)
+        openedx_cookies = openedx_data.get("cookies", {})
+
+        extra_cookies = {
+            "openedxCommunityId": community_id,
+            "tokenId": token,
+            "sessionToken": data.get("sessionToken"),
+        }
+
+        # Generate domain helper JavaScript
+        domain_helper_js = """
+            function getParentDomain() {
+                const parts = window.location.hostname.split('.');
+                const idx = parts.indexOf('networked');
+
+                if (idx === -1) {
+                    return '.' + parts.slice(-2).join('.');
+                }
+
+                const ignore = ['apps', 'courses', 'www'];
+                const candidate = parts[idx - 1];
+
+                if (candidate && !ignore.includes(candidate)) {
+                    return '.' + candidate + '.networked.co';
+                }
+
+                return '.networked.co';
+            }
+
+            const parentDomain = getParentDomain();
+        """
+
+        # Generate JS to set cookies
+        cookie_js_lines = _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=is_mobile)
+
+        # Generate localStorage JavaScript
+        local_storage_js = f"""
+            if ({json.dumps(community_id)}) {{
+                localStorage.setItem(
+                    "selected_community",
+                    {json.dumps(community_id)}
+                );
+            }}
+
+            if ({json.dumps(user_data)}) {{
+                localStorage.setItem(
+                    "user",
+                    JSON.stringify({json.dumps(user_data)})
+                );
+            }}
+        """
+
+        # HTML response with cookie setting + redirect
+        html = f"""
+        <html>
+            <head>
+                <style>
+                    body {{
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background: #fff;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+                    }}
+
+                    .loader-container {{
+                        text-align: center;
+                    }}
+
+                    .loader {{
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 8px;
+                        height: 60px;
+                        margin: 0 auto 30px;
+                    }}
+
+                    .dot {{
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 50%;
+                        background-color: #4A90E2;
+                        animation: bounce 1.4s infinite ease-in-out both;
+                    }}
+
+                    .dot:nth-child(1) {{
+                        animation-delay: -0.32s;
+                    }}
+
+                    .dot:nth-child(2) {{
+                        animation-delay: -0.16s;
+                    }}
+
+                    @keyframes bounce {{
+                        0%, 80%, 100% {{
+                            transform: scale(0.8);
+                            opacity: 0.6;
+                        }}
+                        40% {{
+                            transform: scale(1);
+                            opacity: 1;
+                        }}
+                    }}
+
+                    .loader-text {{
+                        color: #333;
+                        font-size: 18px;
+                        font-weight: 400;
+                        margin-top: 20px;
+                        letter-spacing: 0.5px;
+                    }}
+                </style>
+                <script>
+                    {domain_helper_js}
+
+                    // Set cookies
+                    {"".join(cookie_js_lines)}
+
+                    // Local storage
+                    {local_storage_js}
+
+                    // Redirect to target page
+                    window.location.href = "{redirect_url}";
+                </script>
+            </head>
+            <body>
+                <div class="loader-container">
+                    <div class="loader">
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                    </div>
+                    <div class="loader-text">Finalizing setup</div>
+                </div>
+            </body>
+        </html>
+        """
+
+        # Create response and clear HTTPOnly cookies server-side
+        html_response = HttpResponse(html, content_type="text/html")
+
+        # Delete old HTTPOnly cookies server-side
+        for cookie_name in ['sessionid', 'edx-jwt-cookie-header-payload', 'edx-jwt-cookie-signature']:
+            html_response.delete_cookie(cookie_name, path='/', domain=None)
+            html_response.delete_cookie(cookie_name, path='/', domain=request.get_host())
+            hostname = request.get_host().split(':')[0]
+            if hostname:
+                html_response.delete_cookie(cookie_name, path='/', domain=f'.{hostname}')
+
+        return html_response
+
+    except requests.RequestException as e:
+        AUDIT_LOG.error(f"Networked login V2 failed: {e}")
+        return HttpResponse("API request failed", status=500)
+    except Exception as e:
+        AUDIT_LOG.error(f"Networked login V2 error: {e}")
+        return HttpResponse(f"An unexpected error occurred: {e}", status=500)
+
+
 # CSRF protection is not needed here because the only side effect
 # of this endpoint is to refresh the cookie-based JWT, and attempting
 # to get a CSRF token before we need to refresh adds too much
