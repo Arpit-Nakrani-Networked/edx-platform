@@ -415,6 +415,264 @@ ${HTML(fragment.foot_html())}
     setTimeout(checkForScormIframes, 500);
     setTimeout(checkForScormIframes, 1000);
   }());
+
+  // STEP 1-4: Fullscreen detection and iOS CSS-based fullscreen
+  (function() {
+    var enterBtnLogged = false;
+    var exitBtnLogged = false;
+    var isFullscreen = false;
+
+    // STEP 2: Detect iOS device
+    function isIOSDevice() {
+      var userAgent = navigator.userAgent || navigator.vendor || window.opera;
+      var isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
+      console.log('[STEP 2] iOS device detection:', isIOS, '| User Agent:', userAgent);
+      return isIOS;
+    }
+
+    // STEP 3: Apply CSS-based fullscreen for iOS mobile (Python repo scope only)
+    function enterCSSFullscreen(iframe, enterBtn, exitBtn) {
+      if (!iframe) {
+        console.log('[STEP 3] iframe.scorm-embedded not found, cannot apply CSS fullscreen');
+        return;
+      }
+
+      // Get iframe's parent container - this will be the fullscreen container
+      var container = iframe.parentElement;
+      if (!container) {
+        console.log('[STEP 3] iframe parent not found');
+        return;
+      }
+
+      // Store original styles for restoration
+      container.dataset.origStyle = container.getAttribute('style') || '';
+      iframe.dataset.origStyle = iframe.getAttribute('style') || '';
+      document.body.dataset.origStyle = document.body.getAttribute('style') || '';
+      document.documentElement.dataset.origStyle = document.documentElement.getAttribute('style') || '';
+
+      // Apply fullscreen CSS within our iframe (Python repo scope)
+      document.documentElement.style.cssText = 'overflow:hidden!important;height:100%!important;';
+      document.body.style.cssText = 'overflow:hidden!important;margin:0!important;padding:0!important;height:100%!important;';
+
+      // Apply fullscreen to SCORM container (within our document)
+      container.style.cssText = [
+        'position:fixed!important',
+        'top:0!important',
+        'left:0!important',
+        'right:0!important',
+        'bottom:0!important',
+        'width:100vw!important',
+        'height:100vh!important',
+        'min-height:100vh!important',
+        'max-height:100vh!important',
+        'z-index:999999!important',
+        'margin:0!important',
+        'padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0)!important',
+        'background:#000!important',
+        'box-sizing:border-box!important',
+        'overflow:hidden!important'
+      ].join(';');
+
+      iframe.style.cssText = [
+        'position:fixed!important',
+        'top:0!important',
+        'left:0!important',
+        'right:0!important',
+        'bottom:0!important',
+        'width:100%!important',
+        'height:100%!important',
+        'min-height:100%!important',
+        'max-height:100%!important',
+        'border:none!important',
+        'display:block!important',
+        'margin:0!important',
+        'padding:0!important'
+      ].join(';');
+
+      // Hide enter button, show exit button
+      if (enterBtn) enterBtn.style.display = 'none';
+      if (exitBtn) {
+        exitBtn.style.cssText = [
+          'position:fixed!important',
+          'top:calc(env(safe-area-inset-top,0px) + 10px)!important',
+          'right:calc(env(safe-area-inset-right,0px) + 10px)!important',
+          'z-index:1000000!important',
+          'display:block!important'
+        ].join(';');
+      }
+
+      // Remove padding from LMS containers within our document
+      var courseWrapper = document.querySelector('.course-wrapper');
+      if (courseWrapper) {
+        courseWrapper.dataset.origStyle = courseWrapper.getAttribute('style') || '';
+        courseWrapper.style.cssText = 'margin:0!important;padding:0!important;height:100%!important;overflow:visible!important;';
+      }
+
+      var courseContent = document.querySelector('.course-content');
+      if (courseContent) {
+        courseContent.dataset.origStyle = courseContent.getAttribute('style') || '';
+        courseContent.style.cssText = 'margin:0!important;padding:0!important;height:100%!important;overflow:visible!important;';
+      }
+
+      var mainContent = document.getElementById('main');
+      if (mainContent) {
+        mainContent.dataset.origStyle = mainContent.getAttribute('style') || '';
+        mainContent.style.cssText = 'margin:0!important;padding:0!important;height:100%!important;overflow:visible!important;';
+      }
+
+      // Send postMessage to parent (React repo) to handle #unit-iframe fullscreen
+      console.log('[STEP 3] Sending UNIT_FULLSCREEN_TOGGLE to parent window');
+      window.parent.postMessage({ type: 'UNIT_FULLSCREEN_TOGGLE' }, '*');
+
+      isFullscreen = true;
+      console.log('[STEP 3] Python repo fullscreen applied, postMessage sent to React repo');
+    }
+
+    // STEP 4: Remove CSS-based fullscreen (Python repo scope only)
+    function exitCSSFullscreen(iframe, enterBtn, exitBtn) {
+      if (!iframe) {
+        console.log('[STEP 4] iframe.scorm-embedded not found');
+        return;
+      }
+
+      var container = iframe.parentElement;
+      if (!container) {
+        console.log('[STEP 4] iframe parent not found');
+        return;
+      }
+
+      // Restore original styles within our document
+      container.setAttribute('style', container.dataset.origStyle || '');
+      iframe.setAttribute('style', iframe.dataset.origStyle || '');
+
+      // Restore body and documentElement styles
+      if (document.body.dataset.origStyle !== undefined) {
+        document.body.setAttribute('style', document.body.dataset.origStyle || '');
+      }
+      if (document.documentElement.dataset.origStyle !== undefined) {
+        document.documentElement.setAttribute('style', document.documentElement.dataset.origStyle || '');
+      }
+
+      // Restore LMS containers
+      var courseWrapper = document.querySelector('.course-wrapper');
+      if (courseWrapper && courseWrapper.dataset.origStyle !== undefined) {
+        courseWrapper.setAttribute('style', courseWrapper.dataset.origStyle || '');
+        delete courseWrapper.dataset.origStyle;
+      }
+
+      // Restore course content
+      var courseContent = document.querySelector('.course-content');
+      if (courseContent && courseContent.dataset.origStyle !== undefined) {
+        courseContent.setAttribute('style', courseContent.dataset.origStyle || '');
+        delete courseContent.dataset.origStyle;
+      }
+
+      // Restore main content
+      var mainContent = document.getElementById('main');
+      if (mainContent && mainContent.dataset.origStyle !== undefined) {
+        mainContent.setAttribute('style', mainContent.dataset.origStyle || '');
+        delete mainContent.dataset.origStyle;
+      }
+
+      // Clean up datasets
+      delete container.dataset.origStyle;
+      delete iframe.dataset.origStyle;
+      delete document.body.dataset.origStyle;
+      delete document.documentElement.dataset.origStyle;
+
+      // Restore buttons
+      if (enterBtn) enterBtn.style.display = '';
+      if (exitBtn) exitBtn.style.cssText = '';
+
+      // Send postMessage to parent (React repo) to handle #unit-iframe exit fullscreen
+      console.log('[STEP 4] Sending UNIT_FULLSCREEN_TOGGLE to parent window');
+      window.parent.postMessage({ type: 'UNIT_FULLSCREEN_TOGGLE' }, '*');
+
+      isFullscreen = false;
+      console.log('[STEP 4] Python repo fullscreen removed, postMessage sent to React repo');
+
+      // Trigger resize event
+      window.dispatchEvent(new Event('resize'));
+    }
+
+    function attachLogging() {
+      var iframe = document.querySelector('iframe.scorm-embedded');
+      var enterBtn = document.querySelector('button.enter-fullscreen');
+      var exitBtn = document.querySelector('button.exit-fullscreen');
+
+      // STEP 1: Log when enter-fullscreen button is clicked
+      if (enterBtn && !enterBtnLogged) {
+        enterBtn.addEventListener('click', function(e) {
+          console.log('[STEP 1] button.enter-fullscreen clicked', {
+            timestamp: new Date().toISOString(),
+            target: e.target,
+            currentTarget: e.currentTarget,
+            button: enterBtn,
+            isIOS: isIOSDevice()
+          });
+
+          // STEP 3: Apply CSS fullscreen only for iOS devices
+          if (isIOSDevice()) {
+            e.preventDefault();
+            e.stopPropagation();
+            enterCSSFullscreen(iframe, enterBtn, exitBtn);
+          }
+        }, true); // Use capture phase to intercept before other handlers
+        enterBtnLogged = true;
+        console.log('[STEP 1] Attached listener to button.enter-fullscreen');
+      }
+
+      // STEP 1 & 4: Log when exit-fullscreen button is clicked and remove CSS
+      if (exitBtn && !exitBtnLogged) {
+        exitBtn.addEventListener('click', function(e) {
+          console.log('[STEP 1] button.exit-fullscreen clicked', {
+            timestamp: new Date().toISOString(),
+            target: e.target,
+            currentTarget: e.currentTarget,
+            button: exitBtn,
+            isIOS: isIOSDevice(),
+            isFullscreen: isFullscreen
+          });
+
+          // STEP 4: Remove CSS fullscreen for iOS devices
+          if (isIOSDevice() && isFullscreen) {
+            e.preventDefault();
+            e.stopPropagation();
+            exitCSSFullscreen(iframe, enterBtn, exitBtn);
+          }
+        }, true); // Use capture phase to intercept before other handlers
+        exitBtnLogged = true;
+        console.log('[STEP 1] Attached listener to button.exit-fullscreen');
+      }
+
+      // STEP 1: Log iframe detection
+      if (iframe) {
+        console.log('[STEP 1] iframe.scorm-embedded detected', {
+          src: iframe.src,
+          className: iframe.className,
+          parentElement: iframe.parentElement ? (iframe.parentElement.className || iframe.parentElement.tagName) : 'none',
+          dimensions: {
+            width: iframe.offsetWidth,
+            height: iframe.offsetHeight
+          }
+        });
+      }
+    }
+
+    // Watch for buttons to appear in the DOM
+    var observer = new MutationObserver(function() {
+      if (!enterBtnLogged || !exitBtnLogged) {
+        attachLogging();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Try to attach immediately
+    attachLogging();
+    setTimeout(attachLogging, 100);
+    setTimeout(attachLogging, 500);
+    setTimeout(attachLogging, 1500);
+  }());
 </script>
 
 % if is_learning_mfe:
