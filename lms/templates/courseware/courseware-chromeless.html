@@ -151,25 +151,76 @@ ${HTML(fragment.foot_html())}
       display: none;
     }
 
-    .scorm-loader-spinner {
-      border:  0.25em solid #0D68F9;
-      border-top: 0.25em solid #f3f3f3;
-      border-radius: 50%;
-      width: 35px;  
-      height: 35px;
-      animation: spin 1s linear infinite;
+    .scorm-loader-text {
+      margin-top: 21px;
+      margin-bottom: 45px;
+      font-size: 20px;
+      font-weight: 400;
+      text-align: center;
+      color: #333;
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
-    @keyframes spin {
+    @media (max-width: 767px) {
+      .scorm-loader-text {
+        font-size: 18px;
+      }
+    }
+
+    /* Loader Animation */
+    .lds-roller {
+      display: inline-block;
+      position: relative;
+      width: 80px;
+      height: 80px;
+    }
+
+    .lds-roller div {
+      animation: lds-roller 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+      transform-origin: 40px 46px;
+    }
+
+    .lds-roller div:after {
+      content: " ";
+      display: block;
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #0D68F9;
+      margin: -4px 0 0 -4px;
+    }
+
+    .lds-roller div:nth-child(1) { animation-delay: -0.036s; }
+    .lds-roller div:nth-child(1):after { top: 63px; left: 63px; }
+
+    .lds-roller div:nth-child(2) { animation-delay: -0.072s; }
+    .lds-roller div:nth-child(2):after { top: 68px; left: 56px; }
+
+    .lds-roller div:nth-child(3) { animation-delay: -0.108s; }
+    .lds-roller div:nth-child(3):after { top: 71px; left: 48px; }
+
+    .lds-roller div:nth-child(4) { animation-delay: -0.144s; }
+    .lds-roller div:nth-child(4):after { top: 72px; left: 40px; }
+
+    .lds-roller div:nth-child(5) { animation-delay: -0.18s; }
+    .lds-roller div:nth-child(5):after { top: 71px; left: 32px; }
+
+    .lds-roller div:nth-child(6) { animation-delay: -0.216s; }
+    .lds-roller div:nth-child(6):after { top: 68px; left: 24px; }
+
+    .lds-roller div:nth-child(7) { animation-delay: -0.252s; }
+    .lds-roller div:nth-child(7):after { top: 63px; left: 17px; }
+
+    .lds-roller div:nth-child(8) { animation-delay: -0.288s; }
+    .lds-roller div:nth-child(8):after { top: 56px; left: 12px; }
+
+    @keyframes lds-roller {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
-    }
-
-    .scorm-loader-text {
-      margin-top: 20px;
-      font-size: 16px;
-      color: #333;
-      font-weight: 500;
     }
   </style>
 
@@ -216,6 +267,46 @@ ${HTML(fragment.foot_html())}
     var mainContent = document.getElementById('main');
     var processedIframes = new WeakSet();
     var maxScormCheckAttempts = 20; // Check up to 10 seconds (20 * 500ms)
+    var activeIntervals = new Map(); // Track active message rotation intervals
+
+    // Message lists for different languages
+    var messageList_en = [
+      "Initializing SCORM content...",
+      "Loading SCORM resources...",
+      "Almost there! Finalizing SCORM launch..."
+    ];
+
+
+    // Initialize message rotation for a loader
+    function initializeMessageRotation(loader, messageElementId) {
+      var messageElement = document.getElementById(messageElementId);
+      if (!messageElement) {
+        console.log('[SCORM Loader] Message element not found:', messageElementId);
+        return;
+      }
+
+      // Detect language
+      var lang = navigator.language || navigator.userLanguage;
+      var messageList = messageList_en;
+
+      var currentIndex = 0;
+      messageElement.textContent = messageList[currentIndex];
+
+      // Start rotating messages
+      var interval = setInterval(function() {
+        if (currentIndex < messageList.length - 1) {
+          currentIndex++;
+          messageElement.textContent = messageList[currentIndex];
+        } else {
+          clearInterval(interval);
+          activeIntervals.delete(loader);
+        }
+      }, 2000);
+
+      // Store interval reference
+      activeIntervals.set(loader, interval);
+      console.log('[SCORM Loader] Message rotation initialized for loader');
+    }
 
     // Create loader overlay for a specific iframe
     function createLoaderForIframe(scormIframe) {
@@ -231,9 +322,17 @@ ${HTML(fragment.foot_html())}
       // Create loader overlay
       var loader = document.createElement('div');
       loader.className = 'scorm-iframe-loader';
-      loader.innerHTML = '<div class="scorm-loader-spinner"></div><p class="scorm-loader-text">Loading SCORM content...</p>';
+      var uniqueId = 'scorm-loader-message-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+      loader.innerHTML = '<div class="scorm-loader-text" id="' + uniqueId + '"></div>' +
+        '<div class="lds-roller">' +
+        '<div></div><div></div><div></div><div></div>' +
+        '<div></div><div></div><div></div><div></div>' +
+        '</div>';
 
       wrapper.appendChild(loader);
+
+      // Initialize message rotation for this loader
+      initializeMessageRotation(loader, uniqueId);
 
       console.log('[SCORM Loader] Created loader for iframe');
       return loader;
@@ -242,6 +341,14 @@ ${HTML(fragment.foot_html())}
     // Hide loader for specific iframe
     function hideLoaderForIframe(loader) {
       if (loader) {
+        // Clear any active message rotation interval
+        var interval = activeIntervals.get(loader);
+        if (interval) {
+          clearInterval(interval);
+          activeIntervals.delete(loader);
+          console.log('[SCORM Loader] Cleared message rotation interval');
+        }
+
         loader.classList.add('hidden');
         console.log('[SCORM Loader] Hiding loader for iframe');
       }
