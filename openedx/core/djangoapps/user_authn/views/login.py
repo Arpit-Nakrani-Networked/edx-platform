@@ -454,23 +454,12 @@ def _generate_cookie_js_lines(openedx_cookies, extra_cookies, is_mobile=False):
             f'"; path=/; domain=." + window.location.hostname + "; max-age=1209600; SameSite=Lax";'
         )
 
-    # Always set openedxCommunityId (both mobile and web)
-    community_id = extra_cookies.get("openedxCommunityId")
-    if community_id is not None:
+    # Open edX cookies - set with current hostname domain (e.g., .courses.qa.networked.co)
+    for key, value in extra_cookies.items():
         cookie_js_lines.append(
-            f'document.cookie = "openedxCommunityId=" + {json.dumps(community_id)} + '
+            f'document.cookie = "{key}=" + {json.dumps(value)} + '
             f'"; path=/; domain=" + parentDomain + "; max-age=1209600; SameSite=Lax";'
         )
-
-    # Set tokenId and sessionToken ONLY when mobile is True
-    if is_mobile:
-        for key in ("tokenId", "sessionToken"):
-            value = extra_cookies.get(key)
-            if value is not None:
-                cookie_js_lines.append(
-                    f'document.cookie = "{key}=" + {json.dumps(value)} + '
-                    f'"; path=/; domain=" + parentDomain + "; max-age=1209600; SameSite=Lax";'
-                )
 
     return cookie_js_lines
 
@@ -844,8 +833,8 @@ def networked_login(request,courseid):
 
         extra_cookies = {
             "openedxCommunityId": community_id,
-            "tokenId": token,
-            "sessionToken": data.get("sessionToken"),
+            "openedxTokenId": token,
+            "openedxSessionToken": data.get("sessionToken"),
         }
 
         # Merge (Python 3.9+)
@@ -971,7 +960,7 @@ def networked_login(request,courseid):
                     {domain_helper_js}
 
                     // Clear old cookies before setting new ones
-                    function clearOldCookies(isMobile) {{
+                    function clearOldCookies() {{
                         const cookies = document.cookie.split(";");
                         for (let cookie of cookies) {{
                             const eqPos = cookie.indexOf("=");
@@ -979,16 +968,26 @@ def networked_login(request,courseid):
                             if (name) {{
                                 // Clear with default domain
                                 document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax";
-                                // Clear with parent domain - only when isMobile is true
-                                if (isMobile) {{
-                                    document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=" + parentDomain + ";path=/;SameSite=Lax";
-                                }}
                             }}
                         }}
+
+                         // ✅ Always remove these 3 cookies from parent domain
+                        const requiredCookies = [
+                            "openedxCommunityId",
+                            "openedxTokenId",
+                            "openedxSessionToken"
+                        ];
+
+                        requiredCookies.forEach(name => {{
+                            document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=" + parentDomain + ";path=/;SameSite=Lax";
+                        }});
+
+                        localStorage.removeItem('selected_community')
+                        localStorage.removeItem('user')
                     }}
 
                     // Clear old cookies
-                    clearOldCookies({json.dumps(is_mobile)});
+                    clearOldCookies();
 
                     // Set cookies
                     {"".join(cookie_js_lines)}
