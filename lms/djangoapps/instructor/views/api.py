@@ -113,6 +113,7 @@ from lms.djangoapps.instructor.views.serializer import (
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.course_groups.cohorts import add_user_to_cohort, is_course_cohorted
 from openedx.core.djangoapps.course_groups.models import CourseUserGroup
+from openedx.core.djangoapps.networked.utils import filter_admin_staff_from_list, get_admin_staff_emails_from_networked
 from openedx.core.djangoapps.django_comment_common.models import (
     CourseDiscussionSettings,
     FORUM_ROLE_ADMINISTRATOR,
@@ -1511,6 +1512,18 @@ class GetStudentsFeatures(DeveloperErrorViewMixin, APIView):
             student_data = instructor_analytics_basic.enrolled_students_features(course_key, query_features,search_term)
             # Exclude the requesting user from the students list
             filtered_student_data = [student for student in student_data if student.get('username') != request.user.username]
+
+            # Get admin/staff emails from networked backend
+            admin_staff_emails = get_admin_staff_emails_from_networked(request, log_prefix="[Students]")
+
+            # Exclude admin/staff emails from the student list
+            filtered_student_data = filter_admin_staff_from_list(
+                filtered_student_data,
+                admin_staff_emails,
+                email_key='email',
+                log_prefix="[Students]"
+            )
+
             response_payload = {
                 'course_id': str(course_key),
                 'students': filtered_student_data,

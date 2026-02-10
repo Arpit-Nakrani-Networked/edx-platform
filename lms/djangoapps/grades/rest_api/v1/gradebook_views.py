@@ -60,6 +60,7 @@ from lms.djangoapps.grades.tasks import recalculate_subsection_grade_v3
 from lms.djangoapps.program_enrollments.api import get_external_key_by_user_and_course
 from openedx.core.djangoapps.course_groups import cohorts
 from openedx.core.djangoapps.enrollments.api import get_course_enrollment_details
+from openedx.core.djangoapps.networked.utils import filter_admin_staff_from_list, get_admin_staff_emails_from_networked
 from openedx.core.djangoapps.util.forms import to_bool
 from openedx.core.lib.api.view_utils import (
     DeveloperErrorViewMixin,
@@ -668,6 +669,17 @@ class GradebookView(GradeViewMixin, PaginatedAPIView):
             users = self._paginate_users(course_key, q_objects, related_models, annotations=annotations)
 
             users_counts = self._get_users_counts(course_key, q_objects, annotations=annotations)
+
+            # Get admin/staff emails from networked backend
+            admin_staff_emails = get_admin_staff_emails_from_networked(request, log_prefix="[Gradebook]")
+
+            # Filter out admin/staff users from the users list
+            users = filter_admin_staff_from_list(
+                users,
+                admin_staff_emails,
+                email_key='email',
+                log_prefix="[Gradebook]"
+            )
 
             with bulk_gradebook_view_context(course_key, users):
                 for user, course_grade, exc in CourseGradeFactory().iter(
