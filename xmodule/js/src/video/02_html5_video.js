@@ -355,10 +355,6 @@
                     this.video.addEventListener('pause', this.onPause, false);
                     this.video.addEventListener('ended', this.onEnded, false);
 
-                    if (/iP(hone|od)/i.test(isTouch[0])) {
-                        this.videoEl.prop('controls', true);
-                    }
-
                     // Set video poster
                     if (this.config.poster) {
                         this.videoEl.prop('poster', this.config.poster);

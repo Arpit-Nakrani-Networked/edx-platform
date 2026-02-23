@@ -35,24 +35,16 @@
                             if (state.isYoutubeType()) {
                                 state.parseSpeed();
                             }
-                            // On iPhones and iPods native controls are used.
-                            if (/iP(hone|od)/i.test(state.isTouch[0])) {
-                                _hideWaitPlaceholder(state);
-                                state.el.trigger('initialize', arguments);
-
-                                return false;
-                            }
 
                             _initializeModules(state, i18n)
                                 .done(function() {
-                                    // On iPad ready state occurs just after start playing.
-                                    // We hide controls before video starts playing.
-                                    if (/iPad|Android/i.test(state.isTouch[0])) {
+                                    // On mobile devices, show controls when video starts playing
+                                    if (/iPhone|iPod|iPad|Android/i.test(state.isTouch[0])) {
                                         state.el.on('play', _.once(function() {
                                             state.trigger('videoControl.show', null);
                                         }));
                                     } else {
-                                        // On PC show controls immediately.
+                                        // On desktop, show controls immediately
                                         state.trigger('videoControl.show', null);
                                     }
 

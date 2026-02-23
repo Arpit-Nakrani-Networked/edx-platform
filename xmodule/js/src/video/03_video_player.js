@@ -166,17 +166,29 @@
                 state.browserIsSafari = (userAgent.indexOf('safari') > -1
                                  && !state.browserIsChrome);
 
+                // Check if we have Vimeo external URLs (they work better with hls.js than Safari native)
+                var hasVimeoExternal = state.HLSVideoSources.length > 0 &&
+                    state.HLSVideoSources.some(function(src) {
+                        return src.indexOf('player.vimeo.com/external') !== -1;
+                    });
+
                 // Browser can play HLS videos if either `Media Source Extensions`
                 // feature is supported or browser is safari (native HLS support)
                 state.canPlayHLS = state.HLSVideoSources.length > 0 && (HLS.isSupported() || state.browserIsSafari);
                 state.HLSOnlySources = state.config.sources.length > 0
                                && state.config.sources.length === state.HLSVideoSources.length;
 
+                // For Vimeo external URLs on Safari, use hls.js instead of native HLS for better compatibility
+                var useNativeHLS = state.browserIsSafari;
+                if (hasVimeoExternal && state.browserIsSafari && HLS.isSupported()) {
+                    useNativeHLS = false;
+                }
+
                 commonPlayerConfig = {
                     playerVars: state.videoPlayer.playerVars,
                     videoSources: state.config.sources,
                     poster: state.config.poster,
-                    browserIsSafari: state.browserIsSafari,
+                    browserIsSafari: useNativeHLS, // Use modified flag for HLS player only
                     events: {
                         onReady: state.videoPlayer.onReady,
                         onStateChange: state.videoPlayer.onStateChange,

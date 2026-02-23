@@ -38,11 +38,11 @@
 
             /**
          * Indicates whether the placeholder should be shown. We display it
-         * for html5 videos on iPad and Android devices.
+         * for html5 videos on all mobile devices (iPhone, iPod, iPad, Android).
          * @return {Boolean}
          */
             shouldBeShown: function() {
-                return /iPad|Android/i.test(this.state.isTouch[0]) && !this.state.isYoutubeType();
+                return /iPhone|iPod|iPad|Android/i.test(this.state.isTouch[0]) && !this.state.isYoutubeType();
             },
 
             /** Initializes the module. */
