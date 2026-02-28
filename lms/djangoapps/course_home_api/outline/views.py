@@ -276,6 +276,16 @@ class OutlineTabView(RetrieveAPIView):
                 })
                 resume_course['url'] = request.build_absolute_uri(resume_path)
             except UnavailableCompletionData:
+                # Check StudentModule for ANY user interaction (including SCORM)
+                from lms.djangoapps.courseware.models import StudentModule
+                has_visited = StudentModule.objects.filter(
+                    student=request.user,
+                    course_id=course.id
+                ).exists()
+
+                if has_visited:
+                    resume_course['has_visited_course'] = True
+
                 start_block = get_start_block(course_blocks)
                 resume_course['url'] = start_block['lms_web_url']
 
