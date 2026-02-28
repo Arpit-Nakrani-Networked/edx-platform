@@ -575,21 +575,19 @@ ${HTML(fragment.foot_html())}
         'z-index:999999!important',
         'margin:0!important',
         'padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0)!important',
-        'background:#000!important',
+        'background:#fff!important',
         'box-sizing:border-box!important',
         'overflow:hidden!important'
       ].join(';');
 
       iframe.style.cssText = [
-        'position:fixed!important',
-        'top:0!important',
+        'position:absolute!important',
+        'top:50px!important',
         'left:0!important',
         'right:0!important',
         'bottom:0!important',
         'width:100%!important',
-        'height:100%!important',
-        'min-height:100%!important',
-        'max-height:100%!important',
+        'height:calc(100% - 50px)!important',
         'border:none!important',
         'display:block!important',
         'margin:0!important',
