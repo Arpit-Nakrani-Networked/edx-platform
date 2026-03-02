@@ -339,6 +339,16 @@ class NetworkedCourseDetailView(APIView):
         course_image_uri = co.course_image_url or ""
         course_video_uri = getattr(co, "course_video_url", "") or ""
 
+        # Prefer modulestore values for text fields — more up-to-date than
+        # CourseOverview cache and handles emoji/multi-byte chars correctly.
+        short_description = (
+            getattr(course_block, "short_description", None)
+            or co.short_description
+            or ""
+        ) if course_block else (co.short_description or "")
+
+        overview = getattr(course_block, "overview", "") or "" if course_block else ""
+
         return Response({
             # Core identifiers
             "id": str(co.id),
@@ -346,7 +356,8 @@ class NetworkedCourseDetailView(APIView):
             "name": co.display_name or "",
             "number": co.display_number_with_default or "",
             "org": co.org,
-            "short_description": co.short_description or "",
+            "short_description": short_description,
+            "overview": overview,
             "catalog_visibility": co.catalog_visibility or "",
             "media": {
                 "course_image": {"uri": course_image_uri},
