@@ -23,6 +23,7 @@ from rest_framework.views import APIView
 from common.djangoapps.student.models import CourseAccessRole, CourseEnrollment
 from lms.djangoapps.courseware.courses import get_course_blocks_completion_summary
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from openedx.core.djangoapps.models.course_details import CourseDetails
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from xmodule.modulestore.django import modulestore
 
@@ -347,8 +348,9 @@ class NetworkedCourseDetailView(APIView):
             or ""
         ) if course_block else (co.short_description or "")
 
-        overview = getattr(course_block, "overview", "") or "" if course_block else ""
-
+        overview = CourseDetails.fetch_about_attribute(course_key, "overview") or ""
+        if not overview and course_block:
+            overview = getattr(course_block, "overview", "") or ""
         return Response({
             # Core identifiers
             "id": str(co.id),
