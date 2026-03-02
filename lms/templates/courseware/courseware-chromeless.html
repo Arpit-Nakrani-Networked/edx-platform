@@ -125,7 +125,7 @@ ${HTML(fragment.foot_html())}
     }
 
     /* SCORM iframe individual loader styles */
-    .scorm-iframe-wrapper {
+    .scorm-iframe-wrapper ,.scorm-xblock{
       position: relative;
       display: inline-block;
       width: 100%;
@@ -523,260 +523,384 @@ ${HTML(fragment.foot_html())}
     setTimeout(checkForScormIframes, 1000);
   }());
 
-  // STEP 1-4: Fullscreen detection and iOS CSS-based fullscreen
+  // SCORM Fullscreen functionality using actual Fullscreen API (similar to video player)
   (function() {
+    if(!isIOSDevice()) return null;
     var enterBtnLogged = false;
     var exitBtnLogged = false;
     var isFullscreen = false;
 
-    // STEP 2: Detect iOS device
+    // Fullscreen API vendor prefixes (from video player implementation)
+    var prefixedFullscreenProperties = (function() {
+      if ('fullscreenEnabled' in document) {
+        return {
+          fullscreenElement: 'fullscreenElement',
+          fullscreenEnabled: 'fullscreenEnabled',
+          requestFullscreen: 'requestFullscreen',
+          exitFullscreen: 'exitFullscreen',
+          fullscreenchange: 'fullscreenchange',
+          fullscreenerror: 'fullscreenerror'
+        };
+      }
+      if ('webkitFullscreenEnabled' in document) {
+        return {
+          fullscreenElement: 'webkitFullscreenElement',
+          fullscreenEnabled: 'webkitFullscreenEnabled',
+          requestFullscreen: 'webkitRequestFullscreen',
+          exitFullscreen: 'webkitExitFullscreen',
+          fullscreenchange: 'webkitfullscreenchange',
+          fullscreenerror: 'webkitfullscreenerror'
+        };
+      }
+      if ('mozFullScreenEnabled' in document) {
+        return {
+          fullscreenElement: 'mozFullScreenElement',
+          fullscreenEnabled: 'mozFullScreenEnabled',
+          requestFullscreen: 'mozRequestFullScreen',
+          exitFullscreen: 'mozCancelFullScreen',
+          fullscreenchange: 'mozfullscreenchange',
+          fullscreenerror: 'mozfullscreenerror'
+        };
+      }
+      if ('msFullscreenEnabled' in document) {
+        return {
+          fullscreenElement: 'msFullscreenElement',
+          fullscreenEnabled: 'msFullscreenEnabled',
+          requestFullscreen: 'msRequestFullscreen',
+          exitFullscreen: 'msExitFullscreen',
+          fullscreenchange: 'MSFullscreenChange',
+          fullscreenerror: 'MSFullscreenError'
+        };
+      }
+      return {};
+    }());
+
+    function getVendorPrefixed(property) {
+      return prefixedFullscreenProperties[property];
+    }
+
+    function getFullscreenElement() {
+      return document[getVendorPrefixed('fullscreenElement')];
+    }
+
+    function exitFullscreen() {
+      if (document[getVendorPrefixed('exitFullscreen')]) {
+        return document[getVendorPrefixed('exitFullscreen')]();
+      }
+      return null;
+    }
+
+    function requestFullscreen(element, options) {
+      if (element[getVendorPrefixed('requestFullscreen')]) {
+        return element[getVendorPrefixed('requestFullscreen')](options);
+      }
+      return null;
+    }
+
+    // Detect iOS device
     function isIOSDevice() {
       var userAgent = navigator.userAgent || navigator.vendor || window.opera;
       var isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
-      console.log('[STEP 2] iOS device detection:', isIOS, '| User Agent:', userAgent);
+      console.log('[SCORM Fullscreen] iOS device detection:', isIOS, '| User Agent:', userAgent);
       return isIOS;
     }
 
-    // STEP 3: Apply CSS-based fullscreen for iOS mobile (Python repo scope only)
-    function enterCSSFullscreen(iframe, enterBtn, exitBtn) {
-      if (!iframe) {
-        console.log('[STEP 3] iframe.scorm-embedded not found, cannot apply CSS fullscreen');
-        return;
-      }
-
-      // Get iframe's parent container - this will be the fullscreen container
-      var container = iframe.parentElement;
+    // Enter fullscreen using Fullscreen API
+    function enterFullscreen(container, iframe, enterBtn, exitBtn) {
+      // If no container, try to find or create one
       if (!container) {
-        console.log('[STEP 3] iframe parent not found');
-        return;
+        console.log('[SCORM Fullscreen] Container not found, attempting to find/create wrapper');
+
+        if (iframe) {
+          // Check if iframe's parent can be used as container
+          var parent = iframe.parentElement;
+          if (parent && parent.classList.contains('scorm-xblock')) {
+            container = parent;
+            console.log('[SCORM Fullscreen] Using iframe parent as container');
+          } else if (parent) {
+            // Create a wrapper if it doesn't exist
+            var wrapper = document.createElement('div');
+            wrapper.className = 'scorm-xblock';
+            parent.insertBefore(wrapper, iframe);
+            wrapper.appendChild(iframe);
+            container = wrapper;
+            console.log('[SCORM Fullscreen] Created new wrapper container');
+          } else {
+            console.error('[SCORM Fullscreen] Cannot find parent element for iframe, cannot enter fullscreen');
+            return;
+          }
+        } else {
+          console.error('[SCORM Fullscreen] No iframe found, cannot enter fullscreen');
+          return;
+        }
       }
 
-      // Store original styles for restoration
-      container.dataset.origStyle = container.getAttribute('style') || '';
-      iframe.dataset.origStyle = iframe.getAttribute('style') || '';
-      document.body.dataset.origStyle = document.body.getAttribute('style') || '';
-      document.documentElement.dataset.origStyle = document.documentElement.getAttribute('style') || '';
+      console.log('[SCORM Fullscreen] Entering fullscreen mode on container:', container.className);
 
-      // Apply fullscreen CSS within our iframe (Python repo scope)
-      document.documentElement.style.cssText = 'overflow:hidden!important;height:100%!important;';
-      document.body.style.cssText = 'overflow:hidden!important;margin:0!important;padding:0!important;height:100%!important;';
-
-      // Apply fullscreen to SCORM container (within our document)
-      container.style.cssText = [
-        'position:fixed!important',
-        'top:0!important',
-        'left:0!important',
-        'right:0!important',
-        'bottom:0!important',
-        'width:100vw!important',
-        'height:100vh!important',
-        'min-height:100vh!important',
-        'max-height:100vh!important',
-        'z-index:999999!important',
-        'margin:0!important',
-        'padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0)!important',
-        'background:#fff!important',
-        'box-sizing:border-box!important',
-        'overflow:hidden!important'
-      ].join(';');
-
-      iframe.style.cssText = [
-        'position:absolute!important',
-        'top:50px!important',
-        'left:0!important',
-        'right:0!important',
-        'bottom:0!important',
-        'width:100%!important',
-        'height:calc(100% - 50px)!important',
-        'border:none!important',
-        'display:block!important',
-        'margin:0!important',
-        'padding:0!important'
-      ].join(';');
-
-      // Hide enter button, show exit button
+      // Update button visibility
       if (enterBtn) enterBtn.style.display = 'none';
-      if (exitBtn) {
-        exitBtn.style.cssText = [
-          'position:fixed!important',
-          'top:calc(env(safe-area-inset-top,0px) + 10px)!important',
-          'right:calc(env(safe-area-inset-right,0px) + 10px)!important',
-          'z-index:1000000!important',
-          'display:block!important'
-        ].join(';');
+
+      // Request fullscreen on the container
+      var fullscreenPromise = requestFullscreen(container);
+
+      if (fullscreenPromise) {
+        fullscreenPromise.then(function() {
+          isFullscreen = true;
+          console.log('[SCORM Fullscreen] Fullscreen API request succeeded');
+        }).catch(function(err) {
+          console.error('[SCORM Fullscreen] Fullscreen API request failed:', err);
+          console.error('[SCORM Fullscreen] Error details:', {
+            name: err.name,
+            message: err.message,
+            containerElement: container ? container.tagName : 'null',
+            hasAllowFullscreen: iframe ? iframe.hasAttribute('allowfullscreen') : 'no iframe',
+            hasWebkitAllowFullscreen: iframe ? iframe.hasAttribute('webkitallowfullscreen') : 'no iframe'
+          });
+
+          // Restore original styles on failure
+          if (iframe && iframe.dataset.origStyle !== undefined) {
+            iframe.setAttribute('style', iframe.dataset.origStyle || '');
+            delete iframe.dataset.origStyle;
+          }
+          if (enterBtn) enterBtn.style.display = '';
+          if (exitBtn) exitBtn.style.cssText = '';
+        });
+      } else {
+        console.warn('[SCORM Fullscreen] Fullscreen API not available');
+        isFullscreen = true; // Still track state even if API not available
       }
-
-      // Remove padding from LMS containers within our document
-      var courseWrapper = document.querySelector('.course-wrapper');
-      if (courseWrapper) {
-        courseWrapper.dataset.origStyle = courseWrapper.getAttribute('style') || '';
-        courseWrapper.style.cssText = 'margin:0!important;padding:0!important;height:100%!important;overflow:visible!important;';
-      }
-
-      var courseContent = document.querySelector('.course-content');
-      if (courseContent) {
-        courseContent.dataset.origStyle = courseContent.getAttribute('style') || '';
-        courseContent.style.cssText = 'margin:0!important;padding:0!important;height:100%!important;overflow:visible!important;';
-      }
-
-      var mainContent = document.getElementById('main');
-      if (mainContent) {
-        mainContent.dataset.origStyle = mainContent.getAttribute('style') || '';
-        mainContent.style.cssText = 'margin:0!important;padding:0!important;height:100%!important;overflow:visible!important;';
-      }
-
-      // Send postMessage to parent (React repo) to handle #unit-iframe fullscreen
-      console.log('[STEP 3] Sending UNIT_FULLSCREEN_TOGGLE to parent window');
-      window.parent.postMessage({ type: 'UNIT_FULLSCREEN_TOGGLE' }, '*');
-
-      isFullscreen = true;
-      console.log('[STEP 3] Python repo fullscreen applied, postMessage sent to React repo');
     }
 
-    // STEP 4: Remove CSS-based fullscreen (Python repo scope only)
-    function exitCSSFullscreen(iframe, enterBtn, exitBtn) {
-      if (!iframe) {
-        console.log('[STEP 4] iframe.scorm-embedded not found');
-        return;
+    // Exit fullscreen using Fullscreen API
+    function exitFullscreenMode(iframe, enterBtn, exitBtn) {
+      console.log('[SCORM Fullscreen] Exiting fullscreen mode');
+
+      // Restore iframe original styles
+      if (iframe && iframe.dataset.origStyle !== undefined) {
+        iframe.setAttribute('style', iframe.dataset.origStyle || '');
+        delete iframe.dataset.origStyle;
       }
 
-      var container = iframe.parentElement;
-      if (!container) {
-        console.log('[STEP 4] iframe parent not found');
-        return;
-      }
-
-      // Restore original styles within our document
-      container.setAttribute('style', container.dataset.origStyle || '');
-      iframe.setAttribute('style', iframe.dataset.origStyle || '');
-
-      // Restore body and documentElement styles
-      if (document.body.dataset.origStyle !== undefined) {
-        document.body.setAttribute('style', document.body.dataset.origStyle || '');
-      }
-      if (document.documentElement.dataset.origStyle !== undefined) {
-        document.documentElement.setAttribute('style', document.documentElement.dataset.origStyle || '');
-      }
-
-      // Restore LMS containers
-      var courseWrapper = document.querySelector('.course-wrapper');
-      if (courseWrapper && courseWrapper.dataset.origStyle !== undefined) {
-        courseWrapper.setAttribute('style', courseWrapper.dataset.origStyle || '');
-        delete courseWrapper.dataset.origStyle;
-      }
-
-      // Restore course content
-      var courseContent = document.querySelector('.course-content');
-      if (courseContent && courseContent.dataset.origStyle !== undefined) {
-        courseContent.setAttribute('style', courseContent.dataset.origStyle || '');
-        delete courseContent.dataset.origStyle;
-      }
-
-      // Restore main content
-      var mainContent = document.getElementById('main');
-      if (mainContent && mainContent.dataset.origStyle !== undefined) {
-        mainContent.setAttribute('style', mainContent.dataset.origStyle || '');
-        delete mainContent.dataset.origStyle;
-      }
-
-      // Clean up datasets
-      delete container.dataset.origStyle;
-      delete iframe.dataset.origStyle;
-      delete document.body.dataset.origStyle;
-      delete document.documentElement.dataset.origStyle;
-
-      // Restore buttons
+      // Restore button visibility
       if (enterBtn) enterBtn.style.display = '';
       if (exitBtn) exitBtn.style.cssText = '';
 
-      // Send postMessage to parent (React repo) to handle #unit-iframe exit fullscreen
-      console.log('[STEP 4] Sending UNIT_FULLSCREEN_TOGGLE to parent window');
-      window.parent.postMessage({ type: 'UNIT_FULLSCREEN_TOGGLE' }, '*');
+      // Exit fullscreen
+      if (getFullscreenElement()) {
+        exitFullscreen();
+      }
 
       isFullscreen = false;
-      console.log('[STEP 4] Python repo fullscreen removed, postMessage sent to React repo');
+      console.log('[SCORM Fullscreen] Exited fullscreen mode');
 
       // Trigger resize event
       window.dispatchEvent(new Event('resize'));
     }
 
-    function attachLogging() {
+    // Handle fullscreen change events
+    function handleFullscreenChange() {
+      var container = document.querySelector('.scorm-xblock');
       var iframe = document.querySelector('iframe.scorm-embedded');
       var enterBtn = document.querySelector('button.enter-fullscreen');
       var exitBtn = document.querySelector('button.exit-fullscreen');
 
-      // STEP 1: Log when enter-fullscreen button is clicked
+      if (!getFullscreenElement() && isFullscreen) {
+        // User exited fullscreen via ESC key or browser controls
+        console.log('[SCORM Fullscreen] Fullscreen exited by user');
+
+        // Restore iframe original styles
+        if (iframe && iframe.dataset.origStyle !== undefined) {
+          iframe.setAttribute('style', iframe.dataset.origStyle || '');
+          delete iframe.dataset.origStyle;
+        }
+
+        // Restore button visibility
+        if (enterBtn) enterBtn.style.display = '';
+        if (exitBtn) exitBtn.style.cssText = '';
+
+        isFullscreen = false;
+
+        // Trigger resize event
+        window.dispatchEvent(new Event('resize'));
+      }
+    }
+
+    // Ensure iframe has required fullscreen attributes for iOS
+    function ensureIframeFullscreenAttributes(iframe) {
+      if (!iframe) return;
+
+      // iOS requires these attributes for Fullscreen API to work
+      var requiredAttrs = {
+        'allowfullscreen': 'true',
+        'webkitallowfullscreen': 'true',
+        'mozallowfullscreen': 'true',
+        'msallowfullscreen': 'true'
+      };
+
+      var missingAttrs = [];
+      for (var attr in requiredAttrs) {
+        if (!iframe.hasAttribute(attr)) {
+          iframe.setAttribute(attr, requiredAttrs[attr]);
+          missingAttrs.push(attr);
+        }
+      }
+
+      if (missingAttrs.length > 0) {
+        console.log('[SCORM Fullscreen] Added missing fullscreen attributes to iframe:', missingAttrs);
+      } else {
+        console.log('[SCORM Fullscreen] Iframe already has all fullscreen attributes');
+      }
+    }
+
+    function attachFullscreenHandlers() {
+      var container = document.querySelector('.scorm-xblock');
+      var iframe = document.querySelector('iframe.scorm-embedded');
+
+      // Try multiple selectors for the buttons
+      var enterBtn = document.querySelector('button.enter-fullscreen') ||
+                     document.querySelector('.enter-fullscreen') ||
+                     document.querySelector('.fullscreen-controls .enter-fullscreen') ||
+                     document.querySelector('[class*="enter-fullscreen"]');
+
+      var exitBtn = document.querySelector('button.exit-fullscreen') ||
+                    document.querySelector('.exit-fullscreen') ||
+                    document.querySelector('.fullscreen-controls .exit-fullscreen') ||
+                    document.querySelector('[class*="exit-fullscreen"]');
+
+      // Debug: Log what we found
+      console.log('[SCORM Fullscreen] Element search results:', {
+        foundContainer: !!container,
+        foundIframe: !!iframe,
+        foundEnterBtn: !!enterBtn,
+        foundExitBtn: !!exitBtn,
+        containerClass: container ? container.className : 'not found',
+        iframeParentClass: iframe && iframe.parentElement ? iframe.parentElement.className : 'no iframe parent',
+        enterBtnClass: enterBtn ? enterBtn.className : 'not found',
+        exitBtnClass: exitBtn ? exitBtn.className : 'not found',
+        enterBtnParent: enterBtn && enterBtn.parentElement ? enterBtn.parentElement.className : 'no enter button',
+        exitBtnParent: exitBtn && exitBtn.parentElement ? exitBtn.parentElement.className : 'no exit button'
+      });
+
+      // CRITICAL FOR iOS: Ensure iframe has fullscreen attributes
+      if (iframe) {
+        ensureIframeFullscreenAttributes(iframe);
+
+        // If no container found, try to use iframe's parent
+        if (!container && iframe.parentElement) {
+          console.log('[SCORM Fullscreen] No .scorm-xblock found, will use iframe parent as container');
+        }
+      }
+
+      // Attach fullscreen change listener (only once)
+      if (getVendorPrefixed('fullscreenchange') && !window.scormFullscreenListenerAttached) {
+        document.addEventListener(
+          getVendorPrefixed('fullscreenchange'),
+          handleFullscreenChange
+        );
+        window.scormFullscreenListenerAttached = true;
+        console.log('[SCORM Fullscreen] Attached fullscreen change listener');
+      }
+
+      // Handle enter fullscreen button
       if (enterBtn && !enterBtnLogged) {
         enterBtn.addEventListener('click', function(e) {
-          console.log('[STEP 1] button.enter-fullscreen clicked', {
+          console.log('[SCORM Fullscreen] Enter fullscreen button clicked', {
             timestamp: new Date().toISOString(),
-            target: e.target,
-            currentTarget: e.currentTarget,
-            button: enterBtn,
             isIOS: isIOSDevice()
           });
 
-          // STEP 3: Apply CSS fullscreen only for iOS devices
-          if (isIOSDevice()) {
-            e.preventDefault();
-            e.stopPropagation();
-            enterCSSFullscreen(iframe, enterBtn, exitBtn);
+          e.preventDefault();
+          e.stopPropagation();
+
+          // Get fresh references in case DOM changed
+          var currentContainer = document.querySelector('.scorm-xblock');
+          var currentIframe = document.querySelector('iframe.scorm-embedded');
+
+          // Re-ensure attributes right before fullscreen
+          if (currentIframe) {
+            ensureIframeFullscreenAttributes(currentIframe);
           }
-        }, true); // Use capture phase to intercept before other handlers
+
+          enterFullscreen(currentContainer, currentIframe, enterBtn, exitBtn);
+        }, true);
         enterBtnLogged = true;
-        console.log('[STEP 1] Attached listener to button.enter-fullscreen');
+        console.log('[SCORM Fullscreen] Attached listener to enter-fullscreen button');
       }
 
-      // STEP 1 & 4: Log when exit-fullscreen button is clicked and remove CSS
+      // Handle exit fullscreen button
       if (exitBtn && !exitBtnLogged) {
         exitBtn.addEventListener('click', function(e) {
-          console.log('[STEP 1] button.exit-fullscreen clicked', {
+          console.log('[SCORM Fullscreen] Exit fullscreen button clicked', {
             timestamp: new Date().toISOString(),
-            target: e.target,
-            currentTarget: e.currentTarget,
-            button: exitBtn,
-            isIOS: isIOSDevice(),
-            isFullscreen: isFullscreen
+            isFullscreen: isFullscreen,
+            isIOS: isIOSDevice()
           });
 
-          // STEP 4: Remove CSS fullscreen for iOS devices
-          if (isIOSDevice() && isFullscreen) {
+          if (isFullscreen) {
             e.preventDefault();
             e.stopPropagation();
-            exitCSSFullscreen(iframe, enterBtn, exitBtn);
+
+            // Get fresh iframe reference
+            var currentIframe = document.querySelector('iframe.scorm-embedded');
+            exitFullscreenMode(currentIframe, enterBtn, exitBtn);
           }
-        }, true); // Use capture phase to intercept before other handlers
+        }, true);
         exitBtnLogged = true;
-        console.log('[STEP 1] Attached listener to button.exit-fullscreen');
+        console.log('[SCORM Fullscreen] Attached listener to exit-fullscreen button');
       }
 
-      // STEP 1: Log iframe detection
+      // Log iframe detection
       if (iframe) {
-        console.log('[STEP 1] iframe.scorm-embedded detected', {
+        console.log('[SCORM Fullscreen] SCORM iframe detected', {
           src: iframe.src,
           className: iframe.className,
-          parentElement: iframe.parentElement ? (iframe.parentElement.className || iframe.parentElement.tagName) : 'none',
+          hasAllowFullscreen: iframe.hasAttribute('allowfullscreen'),
+          hasWebkitAllowFullscreen: iframe.hasAttribute('webkitallowfullscreen'),
+          parent: iframe.parentElement ? iframe.parentElement.tagName + '.' + iframe.parentElement.className : 'no parent',
           dimensions: {
             width: iframe.offsetWidth,
             height: iframe.offsetHeight
           }
         });
+      } else {
+        console.log('[SCORM Fullscreen] No SCORM iframe found yet, will keep watching...');
       }
     }
 
-    // Watch for buttons to appear in the DOM
-    var observer = new MutationObserver(function() {
+    // Watch for buttons to appear in the DOM and ensure iframe attributes
+    var observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        // Check for added SCORM iframes and ensure they have fullscreen attributes
+        if (mutation.addedNodes.length > 0) {
+          mutation.addedNodes.forEach(function(node) {
+            if (node.tagName === 'IFRAME' && node.classList && node.classList.contains('scorm-embedded')) {
+              console.log('[SCORM Fullscreen] New SCORM iframe detected, adding fullscreen attributes');
+              ensureIframeFullscreenAttributes(node);
+            } else if (node.querySelectorAll) {
+              var newScormIframes = node.querySelectorAll('iframe.scorm-embedded');
+              if (newScormIframes.length > 0) {
+                console.log('[SCORM Fullscreen] New SCORM iframes detected in added node');
+                newScormIframes.forEach(function(iframe) {
+                  ensureIframeFullscreenAttributes(iframe);
+                });
+              }
+            }
+          });
+        }
+      });
+
+      // Also check for buttons
       if (!enterBtnLogged || !exitBtnLogged) {
-        attachLogging();
+        attachFullscreenHandlers();
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: false });
 
     // Try to attach immediately
-    attachLogging();
-    setTimeout(attachLogging, 100);
-    setTimeout(attachLogging, 500);
-    setTimeout(attachLogging, 1500);
+    attachFullscreenHandlers();
+    setTimeout(attachFullscreenHandlers, 100);
+    setTimeout(attachFullscreenHandlers, 500);
+    setTimeout(attachFullscreenHandlers, 1500);
   }());
 </script>
 

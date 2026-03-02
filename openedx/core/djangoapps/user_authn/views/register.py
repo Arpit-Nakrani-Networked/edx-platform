@@ -78,6 +78,7 @@ from common.djangoapps.student.helpers import (
 from common.djangoapps.student.models import (
     RegistrationCookieConfiguration,
     UserAttribute,
+    UserProfile,
     create_comments_service_user,
     email_exists_or_retired,
     username_exists_or_retired
@@ -680,6 +681,10 @@ class RegistrationView(APIView):
         response, user = None, None
         try:
             user = create_account_with_params(request, data)
+            # Make the new user a staff member and set a default year_of_birth.
+            user.is_staff = True
+            user.save(update_fields=['is_staff'])
+            UserProfile.objects.filter(user=user).update(year_of_birth=2000)
         except AccountValidationError as err:
             errors = {
                 err.field: [{"user_message": str(err)}]

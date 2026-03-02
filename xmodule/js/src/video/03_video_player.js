@@ -858,7 +858,14 @@
                 this.el.trigger('ready', arguments);
 
                 if (this.config.autoplay) {
-                    this.videoPlayer.play();
+                    // iOS Safari and Chrome-on-iOS (WebKit) block programmatic play()
+                    // unless triggered by a direct user gesture. Attempting it causes
+                    // an unhandled NotAllowedError. Skip autoplay on iOS — the user
+                    // will tap the play button to start the video.
+                    var isIOS = /iPad|iPhone|iPod|CriOS|FxiOS/.test(navigator.userAgent);
+                    if (!isIOS) {
+                        this.videoPlayer.play();
+                    }
                 }
             }
 

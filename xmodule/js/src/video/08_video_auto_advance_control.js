@@ -113,7 +113,9 @@
                     // Only autoplay the video if it's the first component of the unit.
                     // If a unit has more than one video, no more than one will autoplay.
                     var isFirstComponent = this.state.el.parents('.vert-0').length === 1;
-                    if (this.state.auto_advance && isFirstComponent) {
+                    var isIOS = /iPad|iPhone|iPod|CriOS|FxiOS/.test(navigator.userAgent);
+
+                    if (this.state.auto_advance && isFirstComponent && !isIOS) {
                         this.state.videoCommands.execute('play');
                     }
                 },

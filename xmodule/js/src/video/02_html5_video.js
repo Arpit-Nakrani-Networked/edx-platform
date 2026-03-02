@@ -160,7 +160,21 @@
                 };
 
                 Player.prototype.playVideo = function() {
-                    this.video.play();
+                    var playPromise = this.video.play();
+                    // video.play() returns a Promise in modern browsers. On iOS/mobile
+                    // devices, autoplay without a direct user gesture is blocked by the
+                    // browser and the Promise is rejected with NotAllowedError.
+                    // Catch it here to prevent an unhandled rejection error in the console.
+                    if (playPromise !== undefined) {
+                        playPromise.catch(function(error) {
+                            if (error?.name === 'NotAllowedError') {
+                                console.log('[Video]: Autoplay blocked by browser policy '
+                                    + '(iOS/mobile requires user interaction to play).');
+                            } else {
+                                console.error('[Video]: playVideo error:', error);
+                            }
+                        });
+                    }
                 };
 
                 Player.prototype.getPlayerState = function() {
