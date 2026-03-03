@@ -90,6 +90,8 @@ class NetworkedCourseListView(APIView):
         progress_map = self._get_progress_map(user, enrolled_course_ids)
         is_started_map = self._get_is_started_map(user, enrolled_course_ids)
 
+        about_short_map = self._get_about_short_description_map(result_course_ids)
+
         results = []
         for co in course_overviews:
             is_staff = user.is_staff or (co.id in staff_course_ids)
@@ -101,7 +103,7 @@ class NetworkedCourseListView(APIView):
                     "course_id": str(co.id),
                     "name": co.display_name or "",
                     "org": co.org,
-                    "short_description": co.short_description or "",
+                    "short_description": about_short_map.get(co.id, co.short_description or ""),
                     "image_url": co.course_image_url or "",
                     "catalog_visibility": co.catalog_visibility or "",
                     "is_staff": is_staff,
@@ -173,6 +175,21 @@ class NetworkedCourseListView(APIView):
             return [], total_count
 
         return list(page_obj.object_list), total_count
+
+    def _get_about_short_description_map(self, course_ids):
+        """Return {course_id: short_description} using about/short_description as source of truth."""
+        short_map = {}
+        for course_id in course_ids:
+            try:
+                short_map[course_id] = CourseDetails.fetch_about_attribute(course_id, "short_description") or ""
+            except Exception as ex:  # pylint: disable=broad-except
+                logger.warning(
+                    "Error getting short_description for course=%s: %s",
+                    course_id,
+                    ex,
+                )
+                short_map[course_id] = ""
+        return short_map
 
     def _get_enrollments_map(self, user, course_ids):
         """Return {course_id: CourseEnrollment} for active enrollments in given courses."""
