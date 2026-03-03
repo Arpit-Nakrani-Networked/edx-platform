@@ -339,18 +339,17 @@ class NetworkedCourseDetailView(APIView):
         # ── Media URIs ───────────────────────────────────────────────────
         course_image_uri = co.course_image_url or ""
         course_video_uri = getattr(co, "course_video_url", "") or ""
-
-        # Prefer modulestore values for text fields — more up-to-date than
-        # CourseOverview cache and handles emoji/multi-byte chars correctly.
-        short_description = (
-            getattr(course_block, "short_description", None)
-            or co.short_description
-            or ""
-        ) if course_block else (co.short_description or "")
+        # Use about/short_description as source of truth (same as Studio settings page).
+        short_description = CourseDetails.fetch_about_attribute(course_key, "short_description") or ""
+        if not short_description and course_block:
+            short_description = getattr(course_block, "short_description", "") or ""
+        if not short_description:
+            short_description = co.short_description or ""
 
         overview = CourseDetails.fetch_about_attribute(course_key, "overview") or ""
         if not overview and course_block:
             overview = getattr(course_block, "overview", "") or ""
+
         return Response({
             # Core identifiers
             "id": str(co.id),
