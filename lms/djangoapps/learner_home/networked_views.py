@@ -154,12 +154,9 @@ class NetworkedCourseListView(APIView):
         """
         Return (course_overviews_page, total_count) for courses where the user
         has a staff or instructor role (i.e. courses they created/manage).
-        Global staff (user.is_staff) can see all courses in the org.
+        Always filters by course-level roles so global staff users only see
+        courses they explicitly created/manage, not all courses in the org.
         """
-        if user.is_staff:
-            # Global staff — return all courses in org (same as All Courses)
-            return self._get_all_courses(user, org, search, page, page_size)
-
         # Get course IDs where this user has a staff/instructor role
         staff_course_ids = CourseAccessRole.objects.filter(
             user=user,
