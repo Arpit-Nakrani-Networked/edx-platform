@@ -558,8 +558,8 @@ ${HTML(fragment.foot_html())}
       document.documentElement.dataset.origStyle = document.documentElement.getAttribute('style') || '';
 
       // Apply fullscreen CSS within our iframe (Python repo scope)
-      document.documentElement.style.cssText = 'overflow:hidden!important;height:100%!important;';
-      document.body.style.cssText = 'overflow:hidden!important;margin:0!important;padding:0!important;height:100%!important;';
+      document.documentElement.style.cssText = 'overflow:auto!important;height:100%!important;width:100%!important;position:fixed!important;';
+      document.body.style.cssText = 'overflow:auto!important;margin:0!important;padding:0!important;height:100%!important;width:100%!important;position:fixed!important;';
 
       // Apply fullscreen to SCORM container (within our document)
       container.style.cssText = [

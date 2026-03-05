@@ -499,7 +499,7 @@ class VideoBlock(
             'cdn_eval': cdn_eval,
             'cdn_exp_group': cdn_exp_group,
             'prevent_skip_video': self.prevent_skip_video,
-            'display_name': self.display_name_with_default,
+            # 'display_name': self.display_name_with_default,
             'download_video_link': download_video_link,
             'handout': self.handout,
             'hide_downloads': is_public_view or is_embed,
