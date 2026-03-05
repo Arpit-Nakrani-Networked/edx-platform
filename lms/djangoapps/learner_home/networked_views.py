@@ -68,6 +68,8 @@ class NetworkedCourseListView(APIView):
         search = request.query_params.get("search", "").strip()
         # staff_only=true → My Courses (courses created/managed by this user)
         staff_only = request.query_params.get("staff_only", "false").lower() == "true"
+        # public_only=true → learners should only see publicly visible courses (catalog_visibility="both")
+        public_only = request.query_params.get("public_only", "false").lower() == "true"
 
         if not org:
             return Response({"error": "org parameter is required"}, status=400)
@@ -75,7 +77,7 @@ class NetworkedCourseListView(APIView):
         if staff_only:
             course_overviews, total_count = self._get_staff_courses(user, org, search, page, page_size)
         else:
-            course_overviews, total_count = self._get_all_courses(user, org, search, page, page_size)
+            course_overviews, total_count = self._get_all_courses(user, org, search, page, page_size, public_only=public_only)
 
         result_course_ids = [co.id for co in course_overviews]
 
@@ -130,9 +132,11 @@ class NetworkedCourseListView(APIView):
     # Private helpers
     # ------------------------------------------------------------------ #
 
-    def _get_all_courses(self, user, org, search, page, page_size):
+    def _get_all_courses(self, user, org, search, page, page_size, public_only=False):
         """Return (course_overviews_page, total_count) for all courses in org."""
         qs = CourseOverview.objects.filter(org=org)
+        if public_only:
+            qs = qs.filter(catalog_visibility="both")
         if search:
             qs = qs.filter(display_name__icontains=search)
         qs = qs.order_by("-modified")
