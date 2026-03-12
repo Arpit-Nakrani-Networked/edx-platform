@@ -121,6 +121,50 @@ $font-path: '../../certificates/fonts';
     url('#{$font-path}/OpenSans/OpenSans-BoldItalic-webfont.ttf') format('truetype');
 }
 
+
+//Figtree-font definitions
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 400;
+	src: url('#{$font-path}/fonts/Figtree/Figtree-Regular.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 500;
+	src: url('#{$font-path}/fonts/Figtree/Figtree-Medium.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 600;
+	src: url('#{$font-path}/fonts/Figtree/Figtree-SemiBold.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 700;
+	src: url('#{$font-path}/fonts/Figtree/Figtree-Bold.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 800;
+	src: url('#{$font-path}/fonts/Figtree/Figtree-ExtraBold.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 900;
+	src: url('#{$font-path}/fonts/Figtree/Figtree-Black.ttf') format('truetype');
+}
+
 // typography: config - stacks
 $font-family-serif: 'Domine', serif;
 $font-family-sans: "Open Sans","Helvetica Neue",Helvetica,Arial,sans-serif;

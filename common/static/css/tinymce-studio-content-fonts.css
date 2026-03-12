@@ -80,3 +80,47 @@
     font-weight: 700;
     font-style: italic;
 }
+
+
+/* //Figtree-font definitions */
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 400;
+	src: url('../fonts/Figtree/Figtree-Regular.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 500;
+	src: url('../fonts/Figtree/Figtree-Medium.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 600;
+	src: url('../fonts/Figtree/Figtree-SemiBold.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 700;
+	src: url('../fonts/Figtree/Figtree-Bold.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 800;
+	src: url('../fonts/Figtree/Figtree-ExtraBold.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Figtree';
+	font-style: normal;
+	font-weight: 900;
+	src: url('../fonts/Figtree/Figtree-Black.ttf') format('truetype');
+}
