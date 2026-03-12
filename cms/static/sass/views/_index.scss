@@ -1,6 +1,6 @@
 // studio - views - how it works
 // ====================
-// @import 'https://cdn.jsdelivr.net/npm/@dannymichel/proxima-nova@4.5.2/index.min.css';
+@import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap');
 
 body,
 h1,
@@ -20,7 +20,7 @@ h6,
 p,
 label,
 button, html body * {
-  font-family: 'Figtree' !important
+  font-family: 'Figtree',sans-serif !important;
 }
 
 .view-howitworks {
