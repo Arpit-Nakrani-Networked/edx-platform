@@ -137,6 +137,8 @@ class NetworkedCourseListView(APIView):
         qs = CourseOverview.objects.filter(org=org)
         if public_only:
             qs = qs.filter(catalog_visibility="both")
+        if public_only is False:
+            qs = qs.filter(catalog_visibility__in=["both", "about"])
         if search:
             qs = qs.filter(display_name__icontains=search)
         qs = qs.order_by("-modified")
