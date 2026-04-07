@@ -168,6 +168,7 @@ class NetworkedCourseListView(APIView):
         qs = CourseOverview.objects.filter(org=org, id__in=staff_course_ids)
         if search:
             qs = qs.filter(display_name__icontains=search)
+        qs = qs.filter(catalog_visibility__in=["both", "about"])
         qs = qs.order_by("-modified")
 
         total_count = qs.count()
