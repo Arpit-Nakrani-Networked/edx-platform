@@ -1057,7 +1057,7 @@ class CourseAccessRole(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     # blank org is for global group based roles such as course creator (may be deprecated)
-    org = models.CharField(max_length=64, db_index=True, blank=True)
+    org = models.CharField(max_length=80, db_index=True, blank=True)
     # blank course_id implies org wide role
     course_id = CourseKeyField(max_length=255, db_index=True, blank=True)
     role = models.CharField(max_length=64, db_index=True)
