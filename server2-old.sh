@@ -1,0 +1,1 @@
+ssh -i "networked-openedx.pem" ubuntu@ec2-18-222-221-252.us-east-2.compute.amazonaws.com
