@@ -781,6 +781,10 @@ multidict==6.1.0
 mysqlclient==2.2.5
     # via
     #   -r requirements/edx/kernel.in
+
+psycopg2-binary==2.9.9
+    # via
+    #   -r requirements/edx/base.in (PostgreSQL driver — replaces mysqlclient once MySQL is fully removed)
     #   openedx-forum
 newrelic==10.2.0
     # via edx-django-utils
