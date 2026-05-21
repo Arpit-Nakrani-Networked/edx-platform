@@ -152,3 +152,6 @@ pii_report
 
 # Pyenv Python version file
 .python-version
+
+LMS-prod.md
+LMS-qa.md
