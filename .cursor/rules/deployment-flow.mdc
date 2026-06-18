@@ -1,0 +1,459 @@
+---
+description: Development, QA, lab, and production deployment flow for Networked Open edX
+alwaysApply: true
+---
+
+# Deployment Flow
+
+Simple deployment flow for this Networked Open edX repo.
+
+## Tags
+
+- Lab image tag: `dev`
+- QA image tag: `qa`
+- Production image tags: generated release tag and `latest`
+
+Build and push both images when code can affect LMS, CMS/Studio, authoring MFE, learning MFE, or Open edX apps:
+
+```bash
+tutor images build openedx  # edx-platform repo changes
+tutor images build mfe      # frontend-app-authoring / frontend-app-learning changes
+```
+
+## Open edX Local Setup
+
+Recommended local setup is Tutor development mode.
+
+```bash
+# Install Tutor first if it is not installed.
+tutor dev launch
+tutor dev start -d
+```
+
+Useful local Tutor commands:
+
+```bash
+tutor dev start -d lms cms
+tutor dev stop
+tutor dev restart lms
+tutor dev restart cms
+tutor dev logs -f lms
+tutor dev logs -f cms
+```
+
+If running this repo directly without Tutor, required basics are Ubuntu, Python 3.11, Node 18, MySQL, Mongo, and Memcached.
+
+```bash
+pip install -r requirements/edx/dev.txt
+pip install -r requirements/edx/assets.txt
+npm clean-install --dev
+
+./manage.py lms migrate
+./manage.py lms migrate --database=student_module_history
+./manage.py cms migrate
+
+npm run build-dev
+```
+
+## Start Local LMS and CMS
+
+Tutor local/dev:
+
+```bash
+tutor dev start -d lms cms
+```
+
+Direct Django run:
+
+```bash
+./manage.py lms runserver 0.0.0.0:18000
+./manage.py cms runserver 0.0.0.0:18010
+```
+
+Common local URLs:
+
+- LMS: `http://localhost:18000`
+- CMS/Studio: `http://localhost:18010`
+
+## VS Code SSH Server Development
+
+Common Networked development flow is to connect directly to the server from VS Code/Cursor using SSH, edit code on the server, and test from the local browser.
+
+1. Connect to the target server with VS Code/Cursor Remote SSH.
+2. Open the server-side `edx-platform` repo folder.
+3. Make code changes directly on the server branch.
+4. Restart the needed Tutor service or pod.
+5. Add the server IP/domain mapping in the local system hosts file if needed.
+6. Open the mapped local/test domain in Chrome and verify LMS/CMS/Networked flow.
+
+Hosts file idea:
+
+```text
+<server-ip> <test-domain>
+```
+
+example edx-platform server hosts mapping:
+
+```text
+#edx-platform
+3.17.142.177 local.openedx.io studio.local.openedx.io apps.local.openedx.io
+# End of section
+```
+
+Example browser checks:
+
+- LMS/course site: `http://local.openedx.io` or `https://local.openedx.io`
+- CMS/Studio site: `http://studio.local.openedx.io` or `https://studio.local.openedx.io`
+- Open edX apps/MFE site: `http://apps.local.openedx.io` or `https://apps.local.openedx.io`
+
+Hot reload is available on this server setup. When working through VS Code/Cursor SSH, many code changes can be checked directly in Chrome on the mapped domains after hot reload or a small service restart, without rebuilding Docker images every time.
+
+For quick server-side dev restart:
+
+```bash
+tutor dev restart lms
+tutor dev restart cms
+```
+
+For Kubernetes/server pod refresh:
+
+```bash
+kubectl get pods -n <namespace>
+kubectl delete pod -n <namespace> <lms-pod>
+kubectl delete pod -n <namespace> <cms-pod>
+```
+
+This server-SSH flow is useful for fast QA/lab testing because local Chrome can hit the server through the mapped IP/domain while code is edited directly on the running environment.
+
+## Domains and Ports Reference
+
+Use this section when opening pages in Chrome or checking environment config.
+
+### SSH Dev Server Domains
+
+Local hosts file maps the dev server IP to Open edX-style domains:
+
+```text
+#edx-platform
+3.17.142.177 local.openedx.io studio.local.openedx.io apps.local.openedx.io
+# End of section
+```
+
+Main browser URLs:
+
+- LMS/course site: `http://local.openedx.io`
+- Studio/CMS site: `http://studio.local.openedx.io`
+- Open edX apps/MFE site: `http://apps.local.openedx.io`
+- LMS/course site with HTTPS if enabled: `https://local.openedx.io`
+- Studio/CMS with HTTPS if enabled: `https://studio.local.openedx.io`
+- Apps/MFE with HTTPS if enabled: `https://apps.local.openedx.io`
+
+If MFE ports are exposed directly on the server, use:
+
+- Learning MFE: `http://apps.local.openedx.io:2000`
+- Course Authoring MFE: `http://apps.local.openedx.io:2001`
+- Gradebook MFE: `http://apps.local.openedx.io:1994`
+- Learner Dashboard MFE: `http://apps.local.openedx.io:1996`
+- Account MFE: `http://apps.local.openedx.io:1997`
+- ORA Grading MFE: `http://apps.local.openedx.io:1993`
+- ORA MFE: `http://apps.local.openedx.io:1992`
+
+### Local Direct Ports
+
+Direct Django/Tutor local defaults:
+
+- LMS: `http://localhost:18000`
+- CMS/Studio: `http://localhost:18010`
+- Ecommerce: `http://localhost:18130`
+- Learning MFE: `http://localhost:2000`
+- Course Authoring MFE: `http://localhost:2001`
+- Gradebook MFE: `http://localhost:1994`
+- Learner Dashboard MFE: `http://localhost:1996`
+- Account MFE: `http://localhost:1997`
+- ORA Grading MFE: `http://localhost:1993`
+- ORA MFE: `http://localhost:1992`
+- Library Authoring MFE: `http://localhost:3001`
+- Publisher MFE: `http://localhost:18400`
+- Enterprise Admin Portal: `http://localhost:1991`
+- Program/Learner Portal: `http://localhost:8734`
+
+Important app paths:
+
+- LMS course home: `/courses/<course_id>/home`
+- LMS courseware: `/courses/<course_id>/courseware`
+- Studio course outline: `/course/<course_id>`
+- Studio grading: `/settings/grading/<course_id>`
+- Studio score board: `/settings/score-board/<course_id>`
+- Studio student overview: `/settings/student-overview/<course_id>`
+- Networked Open edX login bridge: `/auth/networked-login/<course_id>`
+
+Example full URLs:
+
+```text
+http://local.openedx.io/auth/networked-login/<course_id>?token=<token>&communityId=<community_id>&nextPage=add-lesson
+http://studio.local.openedx.io/course/<course_id>
+http://studio.local.openedx.io/settings/grading/<course_id>
+http://apps.local.openedx.io:2000/learning/course/<course_id>/home
+http://apps.local.openedx.io:2001/course/<course_id>
+```
+
+### Networked Environment Domains
+
+Networked app/backend domains used by this integration:
+
+- Production Networked app: `https://apps.networked.co`
+- QA Networked app: `https://apps.qa.networked.co`
+- Lab Networked app: `https://apps.lab.networked.co`
+- Production Networked backend: `https://backend.networked.co`
+- QA Networked backend: `https://backend.qa.networked.co`
+- Lab Networked backend: `https://backend.lab.networked.co`
+
+Open edX LMS/course domains:
+
+- Production LMS/course: `https://courses.networked.co`
+- QA LMS/course: `https://courses.qa.networked.co`
+- Lab LMS/course: `https://lms.lab.networked.co` or lab-specific course host
+- Local mapped LMS/course: `http://local.openedx.io`
+
+Open edX Studio/CMS domains:
+
+- Production Studio/CMS: `https://studio.courses.networked.co` or the production configured Studio host
+- QA Studio/CMS: `https://studio.courses.qa.networked.co` or the QA configured Studio host
+- Lab Studio/CMS: `https://studio.lms.lab.networked.co` or lab-specific Studio host
+- Local mapped Studio/CMS: `http://studio.local.openedx.io`
+
+Open edX apps/MFE domains:
+
+- Production apps/MFE: `https://apps.courses.networked.co` or the production configured apps host
+- QA apps/MFE: `https://apps.courses.qa.networked.co` or the QA configured apps host
+- Lab apps/MFE: `https://apps.lms.lab.networked.co` or lab-specific apps host
+- Local mapped apps/MFE: `http://apps.local.openedx.io`
+
+### Backend Selection Rule
+
+Open edX Networked login code chooses backend by request host:
+
+- host contains `lab` -> `https://backend.lab.networked.co`
+- host contains `qa` or `local` -> `https://backend.qa.networked.co`
+- otherwise -> `https://backend.networked.co`
+
+So when testing with `local.openedx.io`, the Open edX login bridge can call QA backend unless code/config overrides it.
+
+### Common API URLs
+
+Open edX APIs used during setup/integration:
+
+- CSRF: `/csrf/api/v1/token`
+- Open edX registration: `/api/user/v2/account/registration/`
+- Open edX login session: `/api/user/v2/account/login_session/`
+- Public course list: `/api/courses/v1/courses/`
+- Public course detail: `/api/courses/v1/courses/<course_id>`
+- Networked course list: `/api/learner_home/networked/courses/`
+- Networked course detail: `/api/learner_home/networked/course-detail/<course_id>/`
+- Course outline: `/api/course_home/outline/<course_id>`
+- Gradebook: `/api/grades/v1/gradebook/<course_id>/`
+- Gradebook grading info: `/api/grades/v1/gradebook/<course_id>/grading-info`
+- Course grading policy: `/api/grades/v1/policy/courses/<course_id>/`
+
+Networked backend APIs used by Open edX:
+
+- Login data: `/api/v1/auth/openedx-login/data?tokenId=<token>&communityId=<community_id>`
+- Header/community metadata: `/api/v1/global/open-edx/header-meta`
+- Admin/staff emails: `/api/v1/global/open-edx/<community_id>/admin-staff-emails`
+
+## Full Flow
+
+1. Change code locally.
+2. Commit and push to GitHub.
+3. SSH into the target server.
+4. Pull latest code on server.
+5. Remove old local Docker images if needed.
+6. Build Tutor images.
+7. Tag images for the target environment.
+8. Push images to registry.
+9. Delete Open edX pods in that environment.
+10. Kubernetes recreates pods and pulls the new images.
+11. Test LMS, CMS/Studio, Networked redirect, course authoring, learning, and grading.
+
+## Local Git Push
+
+```bash
+git status
+git add <files>
+git commit -m "<message>"
+git push origin <branch>
+```
+
+Do not push secrets, `.env`, private keys, Tutor env secrets, or production credentials.
+
+## Server Git Pull
+
+```bash
+cd <edx-platform-repo>
+git fetch origin
+git checkout <branch-or-tag>
+git pull --ff-only
+git status
+```
+
+Use the correct branch/tag:
+
+- Lab: lab/dev branch or commit.
+- QA: QA branch or commit.
+- Production: reviewed production release tag/commit.
+
+If server has local changes, stop and check before pulling.
+
+## Remove Old Images
+
+```bash
+docker images | grep -E "openedx|mfe"
+docker image prune -f
+docker rmi <old-image-tag-or-id>
+```
+
+Only remove old Open edX/MFE images. Do not delete database or volume data.
+
+## Build Images
+
+Run from the server after `git pull`:
+
+```bash
+tutor images build openedx
+tutor images build mfe
+```
+
+If Tutor config changed, run:
+
+```bash
+tutor config save
+```
+
+Keep the PostgreSQL Tutor plugin/config from `TutorOpenEdxPlugin.md` if that environment uses it.
+
+## Production Start Commands
+
+For Kubernetes/Tutor production environments, start or check services with:
+
+```bash
+tutor k8s start
+kubectl get pods -n <namespace>
+```
+
+If only app pods need refresh after new images are pushed, delete Open edX pods and let Kubernetes recreate them:
+
+```bash
+kubectl delete pod -n <namespace> <lms-pod>
+kubectl delete pod -n <namespace> <cms-pod>
+kubectl delete pod -n <namespace> <worker-pod>
+kubectl delete pod -n <namespace> <mfe-pod>
+```
+
+For logs:
+
+```bash
+kubectl logs -n <namespace> <lms-pod> --tail=100
+kubectl logs -n <namespace> <cms-pod> --tail=100
+```
+
+For production migrations check:
+
+```bash
+tutor k8s exec lms -- ./manage.py lms migrate --check
+tutor k8s exec cms -- ./manage.py cms migrate --check
+```
+
+Run real migrations only when the release includes migrations and backup/rollback is clear.
+
+## Tag and Push
+
+Use real registry/image names from the server.
+
+Lab:
+
+```bash
+docker tag <local-openedx-image> <registry>/<openedx-image>:dev
+docker tag <local-mfe-image> <registry>/<mfe-image>:dev
+docker push <registry>/<openedx-image>:dev
+docker push <registry>/<mfe-image>:dev
+```
+
+QA:
+
+```bash
+docker tag <local-openedx-image> <registry>/<openedx-image>:qa
+docker tag <local-mfe-image> <registry>/<mfe-image>:qa
+docker push <registry>/<openedx-image>:qa
+docker push <registry>/<mfe-image>:qa
+```
+
+Production:
+
+```bash
+docker tag <local-openedx-image> <registry>/<openedx-image>:<release-tag>
+docker tag <local-mfe-image> <registry>/<mfe-image>:<release-tag>
+docker push <registry>/<openedx-image>:<release-tag>
+docker push <registry>/<mfe-image>:<release-tag>
+
+docker tag <registry>/<openedx-image>:<release-tag> <registry>/<openedx-image>:latest
+docker tag <registry>/<mfe-image>:<release-tag> <registry>/<mfe-image>:latest
+docker push <registry>/<openedx-image>:latest
+docker push <registry>/<mfe-image>:latest
+```
+
+## Restart Pods
+
+After image push, delete Open edX pods so Kubernetes creates new pods with the new image.
+
+```bash
+kubectl get pods -n <namespace>
+kubectl delete pod -n <namespace> <lms-pod>
+kubectl delete pod -n <namespace> <cms-pod>
+kubectl delete pod -n <namespace> <worker-pod>
+kubectl delete pod -n <namespace> <mfe-pod>
+kubectl get pods -n <namespace>
+```
+
+Delete only Open edX app pods. Do not delete Postgres, Mongo, Redis, Elasticsearch, or storage pods.
+
+If labels are known, label delete is also OK:
+
+```bash
+kubectl delete pod -n <namespace> -l <openedx-label>
+kubectl delete pod -n <namespace> -l <mfe-label>
+```
+
+## Check After Deploy
+
+```bash
+kubectl get pods -n <namespace>
+kubectl logs -n <namespace> <lms-pod> --tail=100
+kubectl logs -n <namespace> <cms-pod> --tail=100
+```
+
+Smoke test:
+
+- LMS opens.
+- CMS/Studio opens.
+- Networked login redirect works.
+- Course list/detail works.
+- Add lesson/edit lesson works.
+- Publish works.
+- Enroll/start/resume works.
+- Student overview, scoreboard, and grading work if changed.
+
+## Production Simple Checklist
+
+- Deploy only reviewed release commit/tag.
+- Push generated release tag first.
+- Also tag same production image as `latest`.
+- Know rollback image tag before deleting pods.
+- After pods restart, check logs and smoke test main flows.
+
+## If New Code Does Not Show
+
+- Check pushed image tag.
+- Check Kubernetes deployment image tag.
+- Check image pull policy.
+- Check pod image digest.
+- Delete Open edX pod again only after confirming correct image was pushed.

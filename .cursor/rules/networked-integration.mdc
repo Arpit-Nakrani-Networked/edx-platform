@@ -1,0 +1,322 @@
+---
+description: Full Networked fe-main/be-main integration flow with Open edX LMS and Studio
+alwaysApply: true
+---
+
+# Networked Open edX Integration Flow
+
+This rule documents how Networked `fe-main`, Networked `be-main`, and this Open edX `edx-platform` fork work together. Use it as the first reference when changing auth redirects, course creation, authoring, enrollment, learner pages, student overview, scoreboard, grading, or Networked-specific Open edX APIs.
+
+## System Roles
+
+- `fe-main` owns the Networked browser UX: course list, course detail, create/edit modals, enroll/start/resume buttons, and redirects into Open edX pages.
+- `be-main` owns Networked auth/community checks, Open edX account provisioning, LMS/Studio API calls, cookie refresh, and mapping Open edX data into Networked response shapes.
+- Open edX LMS owns learner sessions, courseware playback, course home, enrollment state, progress/completion, gradebook APIs, and custom learner APIs under `lms/djangoapps/learner_home/networked_views.py`.
+- Open edX CMS/Studio owns course creation, course outline authoring, sections/subsections/units/blocks, course details, assets, grading policy, and Studio settings pages.
+- Open edX apps/MFEs are used for the Networked-required simplified authoring and learning UI, including course authoring pages, learning page, student overview, scoreboard, and grading views.
+
+## Important Data Model
+
+- Networked user registration creates the normal Networked user and also ensures a linked Open edX user.
+- Networked stores linked Open edX identity/session data in the `userOpenEdx` table.
+- `userOpenEdx` stores the generated Open edX username/password and separate Open edX session cookies for learner/LMS and Studio/CMS flows. Names may appear as `learnerCookie`/`studioCookie` or `LearnerCookies`/`studioCookies` depending on the codebase layer.
+- Networked browser auth uses Networked cookies such as `tokenId`, `sessionToken`, `communityToken`, and `nextCommunityTokenV2`.
+- Open edX browser bridge cookies added by this fork include `openedxCommunityId`, `openedxTokenId` or `tokenId`, and `openedxSessionToken` or `sessionToken`.
+- Open edX course `org` maps to Networked context: community courses use the community id, and group/space courses use `communityId_groupId`.
+
+## Environments and Domains
+
+- Production LMS/course host: `courses.networked.co`.
+- QA LMS/course host: `courses.qa.networked.co`.
+- Lab LMS/course host often resolves through `lms.lab.networked.co` or lab-specific Open edX hosts.
+- Networked backend selection in Open edX is host based:
+  - host contains `lab` -> `https://backend.lab.networked.co`
+  - host contains `qa` or `local` -> `https://backend.qa.networked.co`
+  - otherwise -> `https://backend.networked.co`
+- Frontend and backend Open edX base URLs must be aligned per environment, otherwise images, redirects, LMS calls, and Studio calls can point at different deployments.
+
+## User Registration and Open edX Provisioning
+
+1. User registers in Networked through signup, invite onboarding, or another Networked user creation path.
+2. Networked creates the Networked user record.
+3. `be-main` ensures an Open edX account exists for the user.
+4. `be-main` normalizes name, username, email, and generated password for Open edX.
+5. `be-main` calls Open edX LMS registration:
+   `POST /api/user/v2/account/registration/`.
+6. Networked stores the generated Open edX username/password in `userOpenEdx`.
+7. When a migrated/old Networked user uses course APIs, `be-main` backfills `userOpenEdx` if missing before continuing.
+
+## Server-to-Server Open edX Login
+
+Networked backend calls Open edX with cookies and CSRF, not with OAuth tokens in the active flow.
+
+1. `be-main` calls LMS CSRF:
+   `GET /csrf/api/v1/token`.
+2. `be-main` logs into Open edX as the linked Open edX user:
+   `POST /api/user/v2/account/login_session/`.
+3. `be-main` extracts `set-cookie` headers.
+4. `be-main` stores the cookies into `userOpenEdx` as learner/LMS cookies or Studio/CMS cookies.
+5. Later LMS calls reuse learner cookies with `X-CSRFToken`, `Cookie`, and `Referer`.
+6. Later Studio calls reuse Studio cookies with `X-CSRFToken`, `Cookie`, and `Referer`.
+7. On `401` or `403`, backend refreshes the relevant cookies and retries.
+8. If Studio rejects with a permission error, backend may make the user staff/author through LMS role APIs, update required profile state, refresh Studio cookies, and retry.
+
+## Networked Login Redirect Into Open edX
+
+The normal Networked course list/detail pages do not require the browser to be logged into Open edX. Browser Open edX login happens only when the user enters native Open edX or Open edX app pages.
+
+Example redirect:
+
+`https://courses.networked.co/auth/networked-login/course-v1:64c91216d7c5b90012977997+JU26_185621+2026_JU_185621?token=S-...&communityId=64c91216d7c5b90012977997&nextPage=add-lesson`
+
+1. `fe-main` builds an LMS URL using the active Open edX LMS base URL.
+2. It appends `token`, `communityId`, optional `nextPage`, and optional `isMobile`.
+3. Open edX route is wired in `openedx/core/djangoapps/user_authn/urls_common.py`:
+   - `GET /auth/networked-login/<courseid>`
+   - `GET /auth/networked-login-v2/<courseid>`
+   - `GET /auth/networked-login-v2/<courseid>/data`
+4. Implementation is in `openedx/core/djangoapps/user_authn/views/login.py`.
+5. Open edX validates the Networked token/community by calling Networked backend:
+   `GET /api/v1/auth/openedx-login/data?tokenId=<token>&communityId=<communityId>`.
+6. Networked backend returns Open edX cookies, Networked user metadata, community details, and session token.
+7. Open edX clears old browser cookies and stale local storage.
+8. Open edX sets Open edX cookies on the current LMS/Studio host and Networked bridge cookies on the parent Networked domain.
+9. Open edX writes `selected_community` and `user` into local storage for Open edX app pages that need Networked context.
+10. Open edX redirects to the target LMS/CMS/app page based on `nextPage`.
+
+## Redirect Target Mapping
+
+Mapping is implemented by `_build_redirect_url()` in `openedx/core/djangoapps/user_authn/views/login.py`.
+
+- `nextPage=add-lesson` -> Studio course outline: `https://<studio-host>/course/<course_id>`.
+- `nextPage=edit-lesson` -> Studio course outline: `https://<studio-host>/course/<course_id>`.
+- `nextPage=student-overview` -> Studio/MFE settings page: `https://<studio-host>/settings/student-overview/<course_id>`.
+- `nextPage=score-board` -> Studio/MFE settings page: `https://<studio-host>/settings/score-board/<course_id>`.
+- `nextPage=grading` -> Studio grading page: `https://<studio-host>/settings/grading/<course_id>`.
+- `nextPage=resume-course` -> LMS courseware: `https://<lms-host>/courses/<course_id>/courseware`.
+- `nextPage=start-course` -> LMS courseware: `https://<lms-host>/courses/<course_id>/courseware`.
+- empty or unknown `nextPage` -> LMS course home: `https://<lms-host>/courses/<course_id>/home`.
+
+## Networked Backend Open edX Routes
+
+These are Networked `be-main` routes used by `fe-main` for Open edX course features. Keep FE course data calls behind these routes instead of calling LMS/CMS directly from the browser.
+
+- `GET /global/open-edx/header-meta`: Networked user/community metadata for Open edX header/profile/community display.
+- `GET /global/open-edx/:communityid/admin-staff-emails`: emails of Networked users with course/admin/staff access for a community.
+- `GET /global/open-edx/edit-access`: checks whether the current Networked user can create/edit courses.
+- `GET /global/open-edx/courses`: course list for active community/group org.
+- `GET /global/open-edx/my-courses`: staff/authored courses for current user.
+- `GET /global/open-edx/courses/:courseId`: Networked course detail page data.
+- `POST /global/open-edx/courses`: create an Open edX course through Studio.
+- `PUT /global/open-edx/courses/:courseId`: update course metadata/details.
+- `DELETE /global/open-edx/courses/:courseId`: soft delete by marking catalog visibility as deleted.
+- `POST /global/open-edx/courses/:courseId/:status`: public/private toggle.
+- `PUT /global/open-edx/courses-settings/:courseId`: update advanced settings, such as SCORM.
+- `POST /global/open-edx/assets/:courseId`: upload/apply course image.
+- `POST /global/open-edx/enroll-course/:courseId`: enroll current user in the Open edX course.
+
+## Open edX Custom and Changed APIs
+
+Custom/new Open edX routes in this fork:
+
+- `openedx/core/djangoapps/user_authn/urls_common.py`
+  - `GET /auth/networked-login/<courseid>`
+  - `GET /auth/networked-login-v2/<courseid>`
+  - `GET /auth/networked-login-v2/<courseid>/data`
+- `lms/djangoapps/learner_home/urls.py`
+  - `GET /api/learner_home/networked/courses/`
+  - `GET /api/learner_home/networked/course-detail/<course_id>/`
+- `cms/urls.py`
+  - `GET /settings/score-board/<course_id>`
+  - `GET /settings/student-overview/<course_id>`
+
+Changed/extended Open edX behavior:
+
+- `openedx/core/djangoapps/user_authn/views/login.py` adds Networked login bridge, cookie setup, environment backend selection, and `nextPage` routing.
+- `lms/djangoapps/learner_home/networked_views.py` adds all-in-one Networked course list/detail responses.
+- `openedx/core/djangoapps/networked/utils.py` calls Networked backend for admin/staff emails and filters those users from LMS lists.
+- `lms/djangoapps/grades/rest_api/v1/gradebook_views.py` filters Networked admin/staff users out of gradebook user results.
+- `lms/djangoapps/instructor/views/api.py` filters Networked admin/staff users out of student-list results.
+- `cms/djangoapps/contentstore/views/course.py` adds/extends score-board and student-overview handlers that redirect to the course authoring MFE when enabled.
+- `cms/djangoapps/contentstore/toggles.py` has flags for new score-board and student-overview MFE pages.
+- `cms/djangoapps/contentstore/utils.py` builds course-authoring MFE URLs for score-board and student-overview pages.
+
+## Course Discovery Flow
+
+1. User opens Networked `/courses` or `/groups/:groupId/courses`.
+2. `fe-main` computes Open edX `org`.
+   - community page -> `selected_community`
+   - group page -> `selected_community_groupId`
+3. `fe-main` calls `GET /global/open-edx/courses` for all visible courses.
+4. `fe-main` calls `GET /global/open-edx/my-courses` for authored/staff courses.
+5. `be-main` validates Networked auth, selected community, and privileges.
+6. For guests, backend can use public LMS course APIs:
+   `GET /api/courses/v1/courses/`.
+7. For authenticated users, backend ensures `userOpenEdx` and learner cookies.
+8. Backend calls custom LMS list API:
+   `GET /api/learner_home/networked/courses/?org=<org>&page=<n>&page_size=<n>&search=<q>&staff_only=<bool>&public_only=<bool>`.
+9. Open edX list API reads `CourseOverview`, `CourseEnrollment`, `CourseAccessRole`, completion progress, and `CourseDetails`.
+10. Response includes course id, name, org, image, `catalog_visibility`, `is_staff`, `is_enrolled`, `is_started`, and progress counts.
+11. `fe-main` renders the Networked course cards and uses Open edX only for images/redirects.
+
+## Course Detail Flow
+
+1. User opens Networked `/courses/:courseid` or `/groups/:groupId/courses/:courseid`.
+2. `fe-main` calls `GET /global/open-edx/courses/:courseId`.
+3. `be-main` validates auth/community and ensures Open edX user/session when needed.
+4. Backend calls Open edX detail sources:
+   - public LMS detail: `GET /api/courses/v1/courses/:courseId`
+   - custom Networked detail: `GET /api/learner_home/networked/course-detail/:courseId/`
+   - LMS outline: `GET /api/course_home/outline/:courseId`
+5. Open edX detail combines `CourseOverview`, enrollment, staff role, completion/progress, enrollment count, media, dates, pacing, overview, short description, and course status.
+6. `fe-main` renders the Networked detail page with overview, introduction video, outline, assignment counts, enroll/start/resume controls, and owner/admin actions.
+
+## Course Creation Flow
+
+1. User must have Networked course creation privilege, such as `CreateCourse`, or community admin/owner rights.
+2. `fe-main` opens the create course modal.
+3. FE builds `FormData` for `POST /global/open-edx/courses`:
+   - `display_name`
+   - auto generated by be-main `number`
+   - auto generated by be-main `run`
+   - `org` community OR community_groupid
+   - `overview`
+   - `short_description`
+   - `intro_video`
+   - optional course image file
+4. `be-main` validates Networked session/community access.
+5. `be-main` ensures the user has Open edX identity and Studio cookies.
+6. Backend creates the course in Studio:
+   `POST /course/`.
+7. If an image exists, backend uploads it:
+   `POST /assets/:courseId/`.
+8. Backend writes course details:
+   `PUT /api/contentstore/v1/course_details/:courseId`.
+9. Backend may update advanced settings/default fields.
+10. FE adds a temporary local course stub and later refreshes from backend/Open edX source of truth.
+
+## Course Edit, Publish, and Delete Flow
+
+- Edit title/description/overview/introduction video -> `PUT /global/open-edx/courses/:courseId` -> Studio course details update.
+- Edit image -> `POST /global/open-edx/assets/:courseId` -> Studio asset upload/apply.
+- Public/private toggle -> `POST /global/open-edx/courses/:courseId/:status` -> updates Open edX `catalog_visibility`.
+- Delete -> `DELETE /global/open-edx/courses/:courseId` -> soft delete by setting deleted catalog visibility, not physical deletion.
+- SCORM settings -> `PUT /global/open-edx/courses-settings/:courseId` -> updates advanced modules/settings.
+- After edits, FE refreshes course detail/list data from `GET /global/open-edx/courses/:courseId`.
+
+## Authoring UI Flow
+
+Networked intentionally shows a simplified Open edX authoring experience in `frontend-authoring`.
+
+1. Owner/admin clicks Add Lessons or Edit Lessons in Networked FE.
+2. FE redirects to LMS `/auth/networked-login/<courseId>?nextPage=add-lesson`.
+3. Open edX validates the Networked token, sets cookies, and redirects to Studio `/course/<course_id>`.
+4. Studio/course authoring shows only Networked-required tabs:
+   - Course outline
+   - Student overview
+   - Score board
+   - Grading
+   - user/community profile area with community image/name
+5. Course outline supports creating, publishing, and deleting sections and lessons.
+6. In Networked terminology, a "lesson" maps to an Open edX subsection/sequential.
+7. Lesson content contains inner Open edX blocks/components, such as text, question/problem, and video.
+8. Edit lesson opens the subsection/unit editing experience with only the needed block add/edit/remove actions.
+9. Unit/lesson configuration exposes Networked-required controls such as unskippable unit, minimum time on unit, show answers on result page, and include in graded.
+10. Publishing makes the authored outline/content visible to learners.
+
+## Lesson and Block Mapping
+
+- Networked Section -> Open edX chapter.
+- Networked Lesson -> Open edX subsection/sequential.
+- Lesson inner content -> Open edX units/verticals and XBlocks.
+- Text content -> HTML/text XBlock or equivalent authoring block.
+- Question content -> problem/quiz XBlock.
+- Video content -> video XBlock.
+- "Include in Graded" affects whether quiz/problem content participates in final course grade through Open edX grading policy/subsection grading behavior.
+- "Show Answers on Result Page" controls quiz/problem answer visibility after submission.
+- "Make this Unit Un-skippable" and "Enforce Minimum Time on Unit" are Networked-required gating/progression settings and should be preserved when modifying authoring behavior.
+
+## Enrollment and Learning Flow
+
+1. Learner opens Networked course list/detail.
+2. Learner clicks Enroll.
+3. FE calls `POST /global/open-edx/enroll-course/:courseId`.
+4. `be-main` validates Networked session/community and ensures learner cookies.
+5. Backend posts LMS enrollment using Open edX change-enrollment behavior with:
+   - `course_id=<courseId>`
+   - `enrollment_action=enroll`
+6. FE shows enrollment success and refreshes course data.
+7. Learner clicks Start, Resume, Revisit, View Course, or View Lesson.
+8. FE redirects through `/auth/networked-login/<courseId>` with `nextPage=start-course`, `resume-course`, or default learner page.
+9. Open edX sets browser cookies and redirects to LMS courseware or course home.
+10. `frontend-learning-page` lets learners see outline, enter lessons, consume content, submit questions, and complete course units.
+11. LMS completion APIs/utilities update progress; Networked detail/list later exposes `complete_count`, `incomplete_count`, `locked_count`, and `is_started`.
+12. Course complete state is derived from Open edX completion/progress and grade state, then surfaced back through Networked APIs.
+
+## Student Overview, Scoreboard, and Grading
+
+- Student overview redirect: `nextPage=student-overview` -> Studio `/settings/student-overview/<course_id>` -> course authoring MFE page when enabled.
+- Scoreboard redirect: `nextPage=score-board` -> Studio `/settings/score-board/<course_id>` -> course authoring MFE page when enabled.
+- Grading redirect: `nextPage=grading` -> Studio `/settings/grading/<course_id>`.
+- CMS grading policy handler:
+  - `GET /settings/grading/<course_id>` for page/JSON.
+  - `PUT` or `POST /settings/grading/<course_id>` to update cutoffs, assignment types, and graders.
+  - `DELETE /settings/grading/<course_id>/<grader_index>` to remove assignment type.
+- LMS gradebook APIs:
+  - `GET /api/grades/v1/gradebook/<course_id>/`
+  - `GET /api/grades/v1/gradebook/<course_id>/grading-info`
+  - `POST /api/grades/v1/gradebook/<course_id>/bulk-update`
+  - `GET /api/grades/v1/policy/courses/<course_id>/`
+- `lms/djangoapps/grades/rest_api/v1/gradebook_views.py` filters out Networked admin/staff emails so scoreboard/gradebook views show learner data, not staff/admin test accounts.
+- `lms/djangoapps/instructor/views/api.py` applies the same admin/staff filtering for student list APIs.
+
+## Access Checks
+
+- Networked FE hides/shows course actions based on Networked privileges such as view courses, create course, owner/admin, and community/group context.
+- Networked backend is the source of truth for API authorization; FE checks are only UX.
+- Course creation/editing routes must validate Networked auth, selected community, and create/edit permissions before calling Studio.
+- Open edX Studio pages still enforce Studio access through `has_studio_read_access`, course roles, staff roles, and CMS permission checks.
+- Open edX LMS learner APIs require authenticated Open edX user via JWT, bearer, or session auth classes depending on the endpoint.
+- Admin/staff filtering depends on `openedxCommunityId` and `openedxSessionToken` cookies so Open edX can ask Networked backend which emails should be excluded.
+
+## Open edX Calling Networked
+
+Open edX calls Networked backend in two main places:
+
+- Login bridge:
+  `GET /api/v1/auth/openedx-login/data?tokenId=<token>&communityId=<communityId>`.
+- Admin/staff filtering:
+  `GET /api/v1/global/open-edx/<openedxCommunityId>/admin-staff-emails`.
+
+Optional/context routes used by Open edX UI integrations:
+
+- `GET /api/v1/global/open-edx/header-meta` for user/community/header metadata.
+- Networked community metadata routes may be used to display community name/image in Open edX apps.
+
+## End-to-End Lifecycle
+
+1. User registers on Networked.
+2. Networked creates both Networked user and Open edX user, then stores credentials in `userOpenEdx`.
+3. User enters a community or group in Networked.
+4. Networked FE lists courses via `GET /global/open-edx/courses`.
+5. Creator/admin creates a course via `POST /global/open-edx/courses`.
+6. Backend creates Studio course and writes metadata/assets/settings.
+7. Creator/admin clicks Add Lessons and is redirected through `/auth/networked-login`.
+8. Open edX validates token, sets cookies, and opens Studio course outline.
+9. Creator creates sections and lessons, where lesson means Open edX subsection with inner blocks.
+10. Creator configures units/quizzes, grading, and publishes content.
+11. Learner opens Networked detail page and enrolls through `POST /global/open-edx/enroll-course/:courseId`.
+12. Learner starts/resumes through `/auth/networked-login` into LMS courseware or learning app.
+13. Learner completes lesson content; Open edX records completion, submissions, and grades.
+14. Networked course detail/list calls show updated progress, started state, score/grade data, and completion state.
+15. Creator/admin reviews student overview, scoreboard, and grading through Studio/MFE pages, with Networked admin/staff users filtered out.
+
+## Maintenance Rules
+
+- Do not remove Networked login routes or change `token`, `communityId`, `nextPage`, and `isMobile` contract without changing `fe-main`, `be-main`, and Open edX together.
+- Do not bypass Networked backend from `fe-main` for course data; keep LMS/CMS API calls server-to-server in `be-main`.
+- Preserve `userOpenEdx` provisioning, generated credentials, learner cookies, and Studio cookies as sensitive data.
+- Preserve community/group org mapping or update FE, BE, and Open edX filters together.
+- Preserve custom LMS learner endpoints and Networked admin/staff filtering when changing learner-home, gradebook, or instructor APIs.
+- Treat lesson/subsection terminology carefully: Networked "lesson" usually means Open edX subsection/sequential, not a whole course or a single XBlock.
+- When debugging redirect issues, check in this order: FE redirect URL, `tokenId` cookie, `communityId`, Open edX `/auth/networked-login`, Networked `/auth/openedx-login/data`, cookie domains, then final LMS/CMS target route.

@@ -1,0 +1,107 @@
+---
+description: Core project context for the Networked Open edX edx-platform fork
+alwaysApply: true
+---
+
+# Project Details
+
+This repository is a Networked-maintained fork of `edx-platform`, the Open edX monolith. It is a large Django and JavaScript codebase that provides two main Django services:
+
+- **LMS**: learner-facing course delivery, dashboards, enrollments, grades, courseware, discussions, certificates, instructor views, APIs, and mobile-facing behavior.
+- **CMS/Studio**: author-facing course creation, editing, content publishing, modulestore authoring flows, course settings, export/import, and Studio APIs.
+
+Treat Open edX upstream conventions as the default style. Prefer small, local changes near the existing app or feature; avoid broad refactors unless explicitly requested.
+
+## Service Entry Points
+
+- `manage.py` is the shared entry command. Use `./manage.py lms ...` for LMS commands and `./manage.py cms ...` for Studio commands.
+- Default settings are `lms.envs.devstack_docker` and `cms.envs.devstack_docker` unless `--settings`, `EDX_PLATFORM_SETTINGS`, or `DJANGO_SETTINGS_MODULE` overrides them.
+- LMS service files: `lms/urls.py`, `lms/startup.py`, `lms/wsgi.py`, `lms/celery.py`.
+- CMS service files: `cms/urls.py`, `cms/startup.py`, `cms/wsgi.py`, `cms/celery.py`.
+- Settings live mainly in `lms/envs/` and `cms/envs/`. Important variants include `common.py`, `devstack.py`, `devstack_docker.py`, `production.py`, and `test.py`.
+
+## Major Code Areas
+
+- `openedx/` is the preferred home for newer importable Open edX code.
+- `openedx/core/djangoapps/` contains shared and newer Django apps used by LMS and/or CMS.
+- `openedx/core/lib/` contains shared non-app libraries.
+- `openedx/features/` contains feature modules that are not always full Django apps.
+- `common/djangoapps/` contains legacy Django apps shared by LMS and CMS, such as student/auth-related models and third-party auth.
+- `common/static/` contains shared frontend assets and legacy JavaScript.
+- `lms/djangoapps/` contains LMS-only apps such as courseware, grades, learner home, instructor, certificates, mobile APIs, and commerce.
+- `cms/djangoapps/` contains Studio-only apps such as contentstore, models/settings, course import/export, and authoring APIs.
+- `xmodule/` contains old but mission-critical course content runtime code: modulestore, XBlock runtime integration, structural blocks, built-in blocks, and course assets. Avoid adding new functionality here unless the surrounding code clearly requires it.
+- `themes/` contains comprehensive theme assets for LMS/CMS.
+
+## LMS vs CMS Boundaries
+
+- LMS and CMS are intended to be independent Django projects even though they share the monolith.
+- `setup.cfg` has import-linter contracts for LMS/CMS independence and isolated app public APIs.
+- For isolated apps, prefer importing through public `api.py` or `data.py` modules when they exist.
+- Do not casually import from `cms` into `lms` or from `lms` into `cms`; check existing exceptions before adding another.
+- Shared functionality usually belongs in `openedx/core/djangoapps`, `openedx/core/lib`, or an existing `common/djangoapps` app, not by crossing service boundaries.
+
+## Course Content Concepts
+
+- Course keys are usually `opaque_keys.edx.keys.CourseKey`; usage/block keys are `UsageKey`.
+- Course summaries often come from `openedx.core.djangoapps.content.course_overviews.models.CourseOverview`.
+- Course authoring and persisted content commonly use modulestore through `xmodule.modulestore.django.modulestore`.
+- Course details/about fields may use `openedx.core.djangoapps.models.course_details.CourseDetails`.
+- Course access roles are in `common.djangoapps.student.models.CourseAccessRole`; enrollments are in `CourseEnrollment`.
+- Completion/progress often uses `completion` utilities and LMS courseware helpers.
+
+## Plugin and Extension Points
+
+- Django plugin support is in `openedx.core.djangoapps.plugins`.
+- `setup.py` defines entry points including `lms.djangoapp`, `cms.djangoapp`, `openedx.course_tab`, `openedx.course_app`, `openedx.course_tool`, `openedx.block_structure_transformer`, `openedx.user_partition_scheme`, and `xblock.v1`.
+- Use existing plugin/app config patterns before adding direct settings mutations.
+- Management commands follow Django convention under `*/management/commands/*.py` and should be run through the LMS or CMS service variant.
+
+## Frontend and Static Assets
+
+- Frontend assets are split across `lms/static`, `cms/static`, `common/static`, `openedx/features/*/static`, `xmodule/js`, and `themes`.
+- Build scripts are in `package.json`: `npm run build`, `npm run build-dev`, `npm run webpack`, `npm run compile-sass`, and watch variants.
+- Webpack config files include `webpack.common.config.js`, `webpack.dev.config.js`, and `webpack.prod.config.js`.
+- This repo uses a mix of legacy Backbone/RequireJS/jQuery, Sass, React 16, Paragon, and newer webpack-managed assets. Match the local pattern of the file being changed.
+- `package.json` includes a custom Proctortrack dependency: `edx-proctoring-proctortrack` from a GitHub URL.
+
+## Tests and Quality
+
+- Pytest defaults are in `setup.cfg`; default test settings are `lms.envs.test`.
+- Test files are commonly named `tests.py`, `test_*.py`, `tests_*.py`, or `*_tests.py`.
+- Additional test config may live near apps, such as `cms/pytest.ini`.
+- Shared test helpers are in `openedx/testing`, `common/test`, `test_root`, and top-level `conftest.py`.
+- For focused backend changes, prefer running the smallest relevant pytest target first.
+- For frontend changes, check local package scripts and nearby test patterns before choosing Jest, Karma, or build-only verification.
+
+## Networked Customizations
+
+- `openedx/core/djangoapps/networked/` contains Networked backend integration helpers.
+- `openedx/core/djangoapps/networked/utils.py` fetches Networked admin/staff emails using `openedxCommunityId` and `openedxSessionToken` cookies, then helps filter those users from LMS lists.
+- Networked login routes are wired in `openedx/core/djangoapps/user_authn/urls_common.py`:
+  - `auth/networked-login/<courseid>`
+  - `auth/networked-login-v2/<courseid>`
+  - `auth/networked-login-v2/<courseid>/data`
+- Networked login implementation is in `openedx/core/djangoapps/user_authn/views/login.py`. It calls `backend.lab.networked.co`, `backend.qa.networked.co`, or `backend.networked.co` depending on host/origin and sets Open edX/Networked cookies.
+- `lms/djangoapps/learner_home/networked_views.py` adds Networked learner-home APIs:
+  - `GET /api/learner_home/networked/courses/`
+  - `GET /api/learner_home/networked/course-detail/<course_id>/`
+- These learner-home APIs combine course overview data, enrollment state, staff role state, progress, started state, and about/short-description data for Networked clients.
+- `lms/djangoapps/grades/rest_api/v1/gradebook_views.py` imports Networked helpers to filter Networked admin/staff users out of gradebook-related results.
+- `lms/djangoapps/instructor/views/api.py` filters Networked admin/staff users out of student-list responses.
+- Preserve the Networked cookie names, host-based backend selection, and admin/staff filtering behavior unless the task explicitly changes that integration.
+
+## Deployment and Local Ops Notes
+
+- Upstream README recommends Tutor for development and production-style operation.
+- `TutorOpenEdxPlugin.md` documents a local Tutor plugin that overrides LMS/CMS database settings for PostgreSQL after a MySQL-to-PostgreSQL migration.
+- That plugin patches `DATABASES` for `default`, `read_replica`, and `student_module_history`; be careful when changing database assumptions.
+- Top-level shell scripts such as `server1.sh` and `server2-old.sh` appear to be local deployment/SSH helpers, not application source.
+
+## Working Guidelines
+
+- Read nearby code before editing; this repo has many historical patterns and app-specific conventions.
+- Keep service scope clear: LMS changes in `lms/`, Studio changes in `cms/`, shared/new code usually in `openedx/`.
+- Prefer existing Open edX APIs, models, waffle/toggle patterns, serializers, permissions, and auth classes over new ad hoc plumbing.
+- Be cautious with auth, cookies, course access, grading, modulestore, migrations, and settings because small changes can affect production learning flows.
+- Do not remove or rename Networked-specific endpoints, cookies, or filtering without checking all local call sites.
